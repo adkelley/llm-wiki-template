@@ -58,44 +58,28 @@ read_skill_metadata() {
   ' "$skill_md"
 }
 
-setup_claude() {
+setup_codex() {
   local settings_file
-  local claude_master_file
-  local claude_template_file
+  local codex_master_file
+  local codex_template_file
 
-  mkdir -p "$repo_root/.claude/skills"
-  echo "Ensured .claude/skills directory exists (created if missing)"
+  mkdir -p "$repo_root/skills"
+  echo "Ensured ./skills directory exists (created if missing)"
 
-  mkdir -p "$repo_root/.claude/memory"
-  echo "Ensured .claude/memory directory exists (created if missing)"
+  codex_master_file="$repo_root/AGENT.md"
+  codex_template_file="$repo_root/scripts/codex/AGENT.md"
 
-  settings_file="$repo_root/.claude/settings.local.json"
-
-  if [ ! -f "$settings_file" ]; then
-    cat > "$settings_file" <<EOF
-{
-  "autoMemoryDirectory": ".claude/memory"
-}
-EOF
-    echo "Created .claude/settings.local.json"
+  if [ ! -f "$codex_master_file" ]; then
+    cp "$codex_template_file" "$codex_master_file"
+    echo "Copied AGENT.md to $codex_master_file"
   else
-    echo "Skipped creating .claude/settings.local.json (already exists)"
-  fi
-
-  claude_master_file="$repo_root/CLAUDE.md"
-  claude_template_file="$repo_root/scripts/claude/CLAUDE.md"
-
-  if [ ! -f "$claude_master_file" ]; then
-    cp "$claude_template_file" "$claude_master_file"
-    echo "Copied CLAUDE.md to $claude_master_file"
-  else
-    echo "Skipped creating CLAUDE.md (already exists)"
+    echo "Skipped creating AGENT.md (already exists)"
   fi
 }
 
 install_optional_skills() {
   local source_skills_dir="$repo_root/scripts/optional-skills"
-  local target_skills_dir="$repo_root/.claude/skills"
+  local target_skills_dir="$repo_root/skills"
   local found_any=false
   local install_mode
   local skill_path
@@ -189,7 +173,7 @@ install_optional_skills() {
 
 main() {
   repo_root="$(git rev-parse --show-toplevel)"
-  setup_claude
+  setup_codex
   install_optional_skills
 }
 

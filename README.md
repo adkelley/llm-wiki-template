@@ -2,23 +2,27 @@
 
 This repository is intentionally left unconfigured for any specific LLM workflow or IDE (e.g., Obsidian). To configure your wiki, refer to the sources below, especially [Karpathy-LLM-Wiki-Stack](https://github.com/ScrapingArt/Karpathy-LLM-Wiki-Stack).
 
-Once your wiki is configured, remove this README from the wiki so your LLM does not ingest it as part of the knowledge base.
-
 ## Protecting Raw Files and Committing Changes Regularly
 
 After each ingest, you can instruct your LLM to commit changes to Git automatically by adding a section to your `CLAUDE.md` or `AGENT.md` file. You can also add a Git `pre-commit` hook that changes newly ingested raw files to read-only. This helps prevent either the LLM or a user from accidentally modifying or deleting source files.
 
 Add the following section to your `CLAUDE.md` or `AGENT.md` file:
 
-```markdown
-## Git Procedure
+## Installation
+
+Clone this repository:
+
+```bash
+$ git clone https://github.com/adkelley/llm-wiki-template
+```
+
+## Git Commit Procedure
 After every ingest, lint, or wiki update operation, commit the changes
 as a normal part of the workflow. Do not wait for the user to ask.
 - Stage only wiki/, todos/, scripts/, and raw/ files. Never stage .obsidian/, .claude/, or .DS_Store.
 - Write a concise commit message summarizing what was ingested or updated.
 - End every commit message with: Co-Authored-By: <Enter your LLM info here>
 - Do NOT push to remote unless explicitly asked.
-```
 
 Create a file named `pre-commit` in `.git/hooks/` with the following contents:
 
@@ -46,7 +50,7 @@ raw/papers/y.pdf
 raw/data/z.csv
 ```
 
-# Claude Code Setup
+## Claude Code Setup
 
 A setup script is provided to configure Claude Code for this repository.
 
@@ -77,12 +81,73 @@ The installer copies optional skills; it does not remove them from the source di
 
 ### Notes
 
-- Run the script from anywhere inside the Git repository.
 - The script expects the repository to already be initialized as a Git repo.
 - Existing files and directories are preserved where possible. For example, existing optional skills are skipped rather than overwritten.
 - If you want to customize Claude behavior further, edit `CLAUDE.md` after setup.
+- Be sure to **set the Domain section in `CLAUDE.md`** with your topic.  
+
+
+## Codex Setup
+
+A setup script is provided to configure Codex for this repository.
+
+Run:
+
+```bash
+scripts/codex/setup.sh
+```
+
+The script will:
+
+- create `./skills/`
+- copy `scripts/codex/AGENT.md` to `AGENT.md` in the repository root if `AGENT.md` does not already exist
+- optionally prompt you to install additional skills from `scripts/optional-skills/` into `./skills/`
+
+The installer copies optional skills; it does not remove them from the source directory.
+
+A setup script is provided to configure Codex for this repository.
+
+### Notes
+
+- The script expects the repository to already be initialized as a Git repo.
+- Existing files and directories are preserved where possible. For example, existing optional skills are skipped rather than overwritten.
+- If you want to customize Codix behavior further, edit `AGENT.md` after setup.
+- Be sure to **set the Domain section in `AGENT.md`** with your topic.  
+
+
+
+## Obsidian
+If you are using [Obsidian](https://obsidian.md/) as your IDE, you'll want to install additional obsidian related scripts that utilizes Obsidian's native CLI that provides programmatic access to Obsidian's internal caching database — bypassing OS-level filesystem searches entirely (see [Karpathy-LLM-Wiki-Stack](https://github.com/ScrapingArt/Karpathy-LLM-Wiki-Stack?tab=readme-ov-file#8-the-obsidian-cli-advantage) for further information).
+
+
+### Claude Code
+
+```bash
+# From your vault root
+$ git clone https://github.com/kepano/obsidian-skills.git /tmp/obsidian-skills
+$ cp -r /tmp/obsidian-skills/skills .claude/skills/obsidian-cli/
+
+# Then, replace the obsidean-cli skill with a patch from @jackal092927
+# From your vault root
+$ git clone https://github.com/jackal092927/obsidian-official-cli-skills /tmp/obsidean-skills
+$ cp -r /tmp/obsidean-skills/plugins/obsidian-cli/skills .claude/skills/
+```
+
+### Codex
+
+```bash
+# From your vault root
+$ git clone https://github.com/kepano/obsidian-skills.git /tmp/obsidian-skills
+$ cp -r /tmp/obsidian-skills/skills ./skills/obsidian-cli/
+
+# Then, replace the obsidean-cli skill with a patch from @jackal092927
+# From your vault root
+$ git clone https://github.com/jackal092927/obsidian-official-cli-skills /tmp/obsidean-skills
+$ cp -r /tmp/obsidean-skills/plugins/obsidian-cli/skills ./skills/
+```
 
 ## Sources
 
 - [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
 - [Karpathy-LLM-Wiki-Stack](https://github.com/ScrapingArt/Karpathy-LLM-Wiki-Stack)
+- [The Complete Guide to Karpathy's LLM Wiki Workflow](https://proudfrog.com/en/insights/karpathy-llm-wiki-complete-workflow-guide)
