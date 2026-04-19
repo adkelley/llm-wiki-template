@@ -1,6 +1,6 @@
 # Claude Code Setup
 
-A setup script is provided to configure Claude Code for this repository.
+If you use Claude Code, this setup script helps configure the repository for a Claude-based LLM wiki workflow.
 
 Run:
 
@@ -8,12 +8,14 @@ Run:
 scripts/claude/setup.sh
 ```
 
-The script will:
+## What the script does
 
-- create `.claude`
-- create `.claude/skills/`
-- create `.claude/memory/`
-- create `.claude/settings.local.json` with the following configuration:
+The script can:
+
+1. create `.claude/`
+2. create `.claude/skills/`
+3. create `.claude/memory/`
+4. create `.claude/settings.local.json` with the following configuration:
 
 ```json
 {
@@ -21,22 +23,33 @@ The script will:
 }
 ```
 
-- copy `scripts/claude/CLAUDE.md` to `CLAUDE.md` in the repository root if `CLAUDE.md` does not already exist
-- optionally prompt you to install additional Claude skills from `scripts/claude/optional-skills/` into `.claude/skills/`
-- `.claude/setting.local.json` config tells Claude Code to store this repository’s auto-memory files in `.claude/memory` inside the project, rather than in Claude Code’s default global memory location in your home directory.
+5. copy `scripts/claude/CLAUDE.md` to `CLAUDE.md` in the repository root if `CLAUDE.md` does not already exist
+6. optionally install Claude-specific skills into `.claude/skills/`
 
-The installer copies optional skills; it does not remove them from the source directory.
+The generated `.claude/settings.local.json` tells Claude Code to store repository-specific auto-memory in `.claude/memory` inside the project, rather than in Claude Code’s default global memory location.
 
+The installer copies optional skills into your active Claude environment. It does not remove them from the source directory.
 
-## Obsidian
-If you are using [Obsidian](https://obsidian.md/) as your IDE, you'll want to install additional obsidian related scripts that utilizes Obsidian's native CLI that provides programmatic access to Obsidian's internal caching database — bypassing OS-level filesystem searches entirely (see [Karpathy-LLM-Wiki-Stack](https://github.com/ScrapingArt/Karpathy-LLM-Wiki-Stack?tab=readme-ov-file#8-the-obsidian-cli-advantage) for further information).
+## Optional skills
 
-Copy the obsidian skills to your `/tmp` directory, then copy the pertinent files to your `/skills` directory
+Optional Claude skills are available under `scripts/claude/optional-skills/`.
 
-```bash
-git clone https://github.com/kepano/obsidian-skills.git /tmp/kepano/obsidian-skills
-git clone https://github.com/jackal092927/obsidian-official-cli-skills /tmp/jackal/obsidian-skills
-# From your vault root
-cp -r /tmp/kepano/obsidian-skills/skills/* .claude/skills/
-cp -r /tmp/jackal/obsidian-skills/plugins/obsidian-cli/skills/obsidian-cli .claude/skills/
-```
+During setup, you can choose to:
+
+- review each optional skill before installing it
+- install all optional skills without reviewing each description
+- skip optional skill installation entirely
+
+Existing installed skills are preserved and skipped rather than overwritten.
+
+## After setup
+
+After running the script, review and customize `CLAUDE.md` for your workflow.
+
+In particular, make sure to update the `Domain` section so it reflects the subject area of your wiki.
+
+## Notes
+
+- The repository should already be initialized as a Git repository.
+- Existing files are preserved where possible.
+- The setup script is meant to save time, but you should still review generated configuration files before committing them.

@@ -1,32 +1,107 @@
 # LLM Wiki Template
 
-This repository is intentionally left unconfigured for any specific LLM workflow or IDE (e.g., Obsidian). To configure your wiki, refer to the sources below, especially [Karpathy-LLM-Wiki-Stack](https://github.com/ScrapingArt/Karpathy-LLM-Wiki-Stack).
+This repository is a starting point for building an LLM-maintained wiki. It is intentionally left mostly unconfigured so you can adapt it to your preferred agent, editor, and workflow.
 
-## Protecting Raw Files and Committing Changes Regularly
+The default structure follows the general LLM wiki pattern popularized by Andrej Karpathy and related community tooling:
 
-After each ingest, you can instruct your LLM to commit changes to Git automatically by adding a section to your `CLAUDE.md` or `AGENT.md` file. You can also add a Git `pre-commit` hook that changes newly ingested raw files to read-only. This helps prevent either the LLM or a user from accidentally modifying or deleting source files.
+- `raw/` stores source material and other inputs
+- `wiki/` stores LLM-maintained notes, summaries, and syntheses
+- `scripts/` contains setup helpers for supported tools and environments
 
-Add the following section to your `CLAUDE.md` or `AGENT.md` file:
+For background, see the sources listed at the end of this README, especially [Karpathy-LLM-Wiki-Stack](https://github.com/ScrapingArt/Karpathy-LLM-Wiki-Stack).
 
 ## Installation
 
-Clone this repository:
+Clone the repository:
 
 ```bash
-$ git clone https://github.com/adkelley/llm-wiki-template
+git clone https://github.com/adkelley/llm-wiki-template
+cd llm-wiki-template
 ```
 
-## Git Commit Procedure
+## Repository Layout
+
+```text
+raw/       immutable source files and inputs
+wiki/      generated and maintained wiki content
+scripts/   setup scripts and integration guides
+```
+
+### `raw/`
+
+Use `raw/` for source documents such as:
+
+- articles
+- papers
+- PDFs
+- transcripts
+- datasets
+- assets
+
+As a rule, files in `raw/` should be treated as immutable inputs.
+
+### `wiki/`
+
+Use `wiki/` for the LLM-maintained knowledge layer, such as:
+
+- source summaries
+- concept pages
+- entity pages
+- comparisons
+- syntheses
+- logs
+- overviews
+
+### `scripts/`
+
+The `scripts/` directory contains setup and integration helpers for:
+
+- Claude Code
+- Codex
+- Obsidian
+- shared optional skills
+
+See `scripts/README.md` for an overview.
+
+## Recommended Workflow
+
+A typical workflow looks like this:
+
+1. add source material to `raw/`
+2. ask your LLM to ingest it into `wiki/`
+3. keep `wiki/index.md`, `wiki/log.md`, and related pages updated
+4. commit changes regularly
+5. optionally use Obsidian as the front-end for browsing and editing the wiki
+
+## Git Safety for `raw/`
+
+Because `raw/` is intended to hold immutable source material, it is a good idea to protect those files from accidental modification.
+
+You can do that in two complementary ways:
+
+1. instruct your LLM to treat `raw/` as read-only in `CLAUDE.md` or `AGENT.md`
+2. add a Git `pre-commit` hook that marks newly added or modified files under `raw/` as read-only
+
+### Suggested Git procedure for your agent instructions
+
+Add a section like this to your `CLAUDE.md` or `AGENT.md`:
+
+```md
+## Git Procedure
 After every ingest, lint, or wiki update operation, commit the changes
 as a normal part of the workflow. Do not wait for the user to ask.
 - Stage only wiki/, todos/, scripts/, and raw/ files. Never stage .obsidian/, .claude/, or .DS_Store.
 - Write a concise commit message summarizing what was ingested or updated.
 - End every commit message with: Co-Authored-By: <Enter your LLM info here>
 - Do NOT push to remote unless explicitly asked.
+```
 
-Create a file named `pre-commit` in `.git/hooks/` with the following contents:
+### Suggested `pre-commit` hook
+
+Create `.git/hooks/pre-commit` with the following contents:
 
 ```bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 git diff --cached --name-only --diff-filter=ACM -z |
@@ -44,105 +119,117 @@ done
 
 This hook will affect files such as:
 
-```bash
+```text
 raw/articles/x.md
 raw/papers/y.pdf
 raw/data/z.csv
 ```
 
-## Claude Code Setup
+## Tool Setup
 
-A setup script is provided to configure Claude Code for this repository.
+This repository includes setup scripts for supported LLM environments.
 
-Run:
+## Claude Code
+
+If you use Claude Code, run:
 
 ```bash
 scripts/claude/setup.sh
 ```
 
-The script will:
+This setup script can:
 
-- create `.claude`
+- create `.claude/`
 - create `.claude/skills/`
 - create `.claude/memory/`
-- create `.claude/settings.local.json` with the following configuration:
+- create `.claude/settings.local.json`
+- copy `scripts/claude/CLAUDE.md` to `CLAUDE.md` if it does not already exist
+- optionally install Claude-related skills
 
-```json
-{
-  "autoMemoryDirectory": ".claude/memory"
-}
-```
-
-- copy `scripts/claude/CLAUDE.md` to `CLAUDE.md` in the repository root if `CLAUDE.md` does not already exist
-- optionally prompt you to install additional Claude skills from `scripts/claude/optional-skills/` into `.claude/skills/`
-- `.claude/setting.local.json` config tells Claude Code to store this repository’s auto-memory files in `.claude/memory` inside the project, rather than in Claude Code’s default global memory location in your home directory.
-
-The installer copies optional skills; it does not remove them from the source directory.
+The generated `.claude/settings.local.json` config stores Claude Code auto-memory inside the repository at `.claude/memory` instead of using Claude Code's default global location.
 
 ### Notes
 
-- The script expects the repository to already be initialized as a Git repo.
-- Existing files and directories are preserved where possible. For example, existing optional skills are skipped rather than overwritten.
-- If you want to customize Claude behavior further, edit `CLAUDE.md` after setup.
-- Be sure to **set the Domain section in `CLAUDE.md`** with your topic.  
+- the repository should already be initialized as a Git repository
+- existing files are preserved where possible
+- existing optional skills are skipped rather than overwritten
+- after setup, review and customize `CLAUDE.md`
+- be sure to set the `Domain` section in `CLAUDE.md`
 
+For more details, see `scripts/claude/README.md`.
 
-## Codex Setup
+## Codex
 
-A setup script is provided to configure Codex for this repository.
-
-Run:
+If you use Codex, run:
 
 ```bash
 scripts/codex/setup.sh
 ```
 
-The script will:
+This setup script can:
 
 - create `./skills/`
-- copy `scripts/codex/AGENT.md` to `AGENT.md` in the repository root if `AGENT.md` does not already exist
-- optionally prompt you to install additional skills from `scripts/optional-skills/` into `./skills/`
-
-The installer copies optional skills; it does not remove them from the source directory.
-
-A setup script is provided to configure Codex for this repository.
+- copy `scripts/codex/AGENT.md` to `AGENT.md` if it does not already exist
+- optionally install shared optional skills
 
 ### Notes
 
-- The script expects the repository to already be initialized as a Git repo.
-- Existing files and directories are preserved where possible. For example, existing optional skills are skipped rather than overwritten.
-- If you want to customize Codix behavior further, edit `AGENT.md` after setup.
-- Be sure to **set the Domain section in `AGENT.md`** with your topic.  
+- the repository should already be initialized as a Git repository
+- existing files are preserved where possible
+- existing optional skills are skipped rather than overwritten
+- after setup, review and customize `AGENT.md`
+- be sure to set the `Domain` section in `AGENT.md`
 
-
+For more details, see `scripts/codex/README.md`.
 
 ## Obsidian
-If you are using [Obsidian](https://obsidian.md/) as your IDE, you'll want to install additional obsidian related scripts that utilizes Obsidian's native CLI that provides programmatic access to Obsidian's internal caching database — bypassing OS-level filesystem searches entirely (see [Karpathy-LLM-Wiki-Stack](https://github.com/ScrapingArt/Karpathy-LLM-Wiki-Stack?tab=readme-ov-file#8-the-obsidian-cli-advantage) for further information).
 
-Copy the obsidian skills to your `/tmp` directory
+If you use [Obsidian](https://obsidian.md/) as your IDE, you may also want to configure the repository for an Obsidian-based wiki workflow.
 
-```bash
-$ git clone https://github.com/kepano/obsidian-skills.git /tmp/kepano/obsidian-skills
-$ git clone https://github.com/jackal092927/obsidian-official-cli-skills /tmp/jackal/obsidian-skills
-```
-
-Then, depending on whether you're using Claude Code or Codex, finish installing by following the directions below:
-
-### Claude Code
+Run:
 
 ```bash
-# From your vault root
-$ cp -r /tmp/kepano/obsidian-skills/skills/* .claude/skills/
-$ cp -r /tmp/jackal/obsidean-skills/plugins/obsidian-cli/skills/obsidian-cli .claude/skills/
+scripts/obsidian/setup.sh
 ```
 
-### Codex
+The Obsidian setup script can help:
 
-```bash
-# From your vault root
-$ cp -r /tmp/kepano/obsidian-skills/skills/* ./skills/
-$ cp -r /tmp/jackal/obsidian-skills/plugins/obsidian-cli/skills/obsidian ./skills/
-```
+- configure `.obsidian/app.json`
+- install Obsidian-related skills for Claude Code or Codex
+- improve compatibility with Obsidian-specific file formats and workflows
+
+These integrations can provide more reliable access to Obsidian metadata and cache behavior than plain filesystem search alone in some workflows.
+
+### Why this matters
+
+Obsidian-related skills can help agents work more safely with:
+
+- Obsidian-specific conventions
+- vault metadata
+- internal links
+- attachments
+- CLI-based lookups
+
+For more details, see `scripts/obsidian/README.md`.
+
+## Optional Skills
+
+Shared optional skills live under `scripts/optional-skills/`.
+
+Depending on the setup flow you choose, installer scripts may copy selected skills into:
+
+- `.claude/skills/` for Claude Code
+- `./skills/` for Codex
+
+The installer copies skills into the active environment; it does not remove them from the source directory.
+
+## Notes
+
+- empty directories are tracked using `.gitkeep` placeholder files where needed
+- `raw/` should be treated as immutable
+- `wiki/` is the layer your LLM should actively maintain
+- setup scripts are intended to save time, but you should still review generated config files before committing them
+- if you use both an LLM agent and Obsidian, review `.obsidian/`, `.claude/`, `CLAUDE.md`, and `AGENT.md` to make sure they match your preferred workflow
 
 ## Sources
 
