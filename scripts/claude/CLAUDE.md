@@ -1,7 +1,7 @@
 # LLM Wiki — Master Schema
 
 ## Domain
-["Japan Stay - Fall 2026"]
+[REPLACE WITH YOUR TOPIC, e.g.: "Machine Learning Research, 2024–2026"]
 
 ## Project Structure
 - `raw/` — immutable source documents. NEVER modify any file in raw/.
