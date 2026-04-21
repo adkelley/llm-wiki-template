@@ -213,3 +213,27 @@ After every ingest, lint, or wiki update operation, commit the changes:
 - ALWAYS update wiki/index.md and wiki/log.md
 - Use confidence: low when uncertain
 - Cross-reference all new pages to at least 2 existing pages
+
+---
+
+## YAML Frontmatter Rules (Obsidian Compatibility)
+Obsidian's property parser is stricter than the YAML spec. Follow these rules
+to avoid invalid property errors:
+
+ALL list fields (`key_claims`, `aliases`, `sources`, `related`) MUST use
+block list format with each item quoted on its own line:
+  key_claims:
+    - "First claim text"
+    - "Second claim text"
+  related:
+    - "[[page-one]]"
+    - "[[page-two]]"
+
+NEVER use inline format: `related: [[page1]], [[page2]]`
+NEVER use bracket format: `aliases: [item1, item2]`
+
+Additionally, avoid these characters inside quoted YAML values:
+- NO unescaped double-quote characters inside a quoted string value.
+  Rephrase to avoid them.
+- NO `→` arrow characters. Write "to" instead.
+- NO `~` tilde. Write "approx" instead.
