@@ -54,7 +54,7 @@ Skill-based execution takes precedence over:
 - `wiki/index.md` — master catalog. Update on EVERY ingest.
 - `wiki/log.md` — append-only activity log. Never delete entries.
 - `wiki/overview.md` — high-level synthesis. Revise after major ingests.
-- `CLAUDE.md` — this file. Re-read at the start of every session.
+- `AGENT.md` — this file. Re-read at the start of every session.
 - `wiki/hot.md` — session hot cache (~500 words). Read silently at session start BEFORE responding.
 
 ---
@@ -202,7 +202,8 @@ After every ingest, lint, or wiki update operation, commit the changes:
 - Never stage .obsidian/, .claude/, or .DS_Store
 - Write a concise commit message
 - End with:
-  Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+  Co-Authored-By: {active_llm_model_and_effort} <{llm_company_email}>
+  Use the actual current session model and provider email, e.g. gpt-5.4 medium <noreply@openai.com>
 - Do NOT push unless explicitly asked
 
 ---
@@ -213,27 +214,3 @@ After every ingest, lint, or wiki update operation, commit the changes:
 - ALWAYS update wiki/index.md and wiki/log.md
 - Use confidence: low when uncertain
 - Cross-reference all new pages to at least 2 existing pages
-
----
-
-## YAML Frontmatter Rules (Obsidian Compatibility)
-Obsidian's property parser is stricter than the YAML spec. Follow these rules
-to avoid invalid property errors:
-
-ALL list fields (`key_claims`, `aliases`, `sources`, `related`) MUST use
-block list format with each item quoted on its own line:
-  key_claims:
-    - "First claim text"
-    - "Second claim text"
-  related:
-    - "[[page-one]]"
-    - "[[page-two]]"
-
-NEVER use inline format: `related: [[page1]], [[page2]]`
-NEVER use bracket format: `aliases: [item1, item2]`
-
-Additionally, avoid these characters inside quoted YAML values:
-- NO unescaped double-quote characters inside a quoted string value.
-  Rephrase to avoid them.
-- NO `→` arrow characters. Write "to" instead.
-- NO `~` tilde. Write "approx" instead.

@@ -137,17 +137,14 @@ After EVERY session (or when the user says /close), update wiki/hot.md:
 ### Active Pages
 [List of wiki pages currently being developed or recently updated]
 
----
-
 ## Git Procedure
 After every ingest, lint, or wiki update operation, commit the changes
 as a normal part of the workflow. Do not wait for the user to ask.
 - Stage only wiki/ and raw/ files. Never stage .obsidian/, .claude/, or .DS_Store.
 - Write a concise commit message summarizing what was ingested or updated.
-- End every commit message with: Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+- End every commit message with: `Co-Authored-By: {active_llm_model_and_effort} <{llm_company_email}>`
+  Use the actual current session model and provider email, e.g. `gpt-5.4 medium <noreply@openai.com>` or `Claude Opus 4.6 <noreply@anthropic.com>`
 - Do NOT push to remote unless explicitly asked.
-
----
 
 ## Safety Rules
 - NEVER write to raw/. This is a hard constraint with no exceptions.
@@ -155,27 +152,3 @@ as a normal part of the workflow. Do not wait for the user to ask.
 - Always update wiki/index.md and wiki/log.md on every operation.
 - When uncertain about a claim's accuracy, set confidence: low.
 - Cross-reference all new pages to at least 2 existing pages.
-
----
-
-## YAML Frontmatter Rules (Obsidian Compatibility)
-Obsidian's property parser is stricter than the YAML spec. Follow these rules
-to avoid invalid property errors:
-
-ALL list fields (`key_claims`, `aliases`, `sources`, `related`) MUST use
-block list format with each item quoted on its own line:
-  key_claims:
-    - "First claim text"
-    - "Second claim text"
-  related:
-    - "[[page-one]]"
-    - "[[page-two]]"
-
-NEVER use inline format: `related: [[page1]], [[page2]]`
-NEVER use bracket format: `aliases: [item1, item2]`
-
-Additionally, avoid these characters inside quoted YAML values:
-- NO unescaped double-quote characters inside a quoted string value.
-  Rephrase to avoid them.
-- NO `→` arrow characters. Write "to" instead.
-- NO `~` tilde. Write "approx" instead.
