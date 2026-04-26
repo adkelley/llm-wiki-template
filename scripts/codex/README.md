@@ -22,9 +22,14 @@ The installer copies optional skills into your active Codex environment. It does
 
 Shared optional skills are available under `scripts/optional-skills/`.
 
-During setup, you can choose whether to install optional skills into `./skills/`.
+During setup, you can choose to:
 
-Existing installed skills are preserved and skipped rather than overwritten.
+- install new optional skills into `./skills/`
+- update existing optional skills by replacing only their `SKILL.md`
+- review all optional skills before deciding whether to install or update each one
+- skip optional skill installation and updates entirely
+
+When updating an existing skill, the setup script preserves files such as `config.md` and `processed.txt`.
 
 ## After setup
 

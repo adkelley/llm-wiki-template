@@ -32,15 +32,16 @@ The installer copies optional skills into your active Claude environment. It doe
 
 ## Optional skills
 
-Optional Claude skills are available under `scripts/claude/optional-skills/`.
+Shared optional skills are available under `scripts/optional-skills/`.
 
 During setup, you can choose to:
 
-- review each optional skill before installing it
-- install all optional skills without reviewing each description
-- skip optional skill installation entirely
+- install new optional skills into `.claude/skills/`
+- update existing optional skills by replacing only their `SKILL.md`
+- review all optional skills before deciding whether to install or update each one
+- skip optional skill installation and updates entirely
 
-Existing installed skills are preserved and skipped rather than overwritten.
+When updating an existing skill, the setup script preserves files such as `config.md` and `processed.txt`.
 
 ## After setup
 

@@ -32,64 +32,70 @@ Before running this skill, the user needs:
 - JustRecord installed on iPhone.
 - JustRecord iCloud sync enabled.
 - iCloud Drive enabled on the Mac.
-- `python3` installed.
+- `python3`, `ffmpeg`, &  `uv` installed
 - Standard shell tools available: `find`, `sort`, `head`, `git`.
 - This repository checked out locally.
 
-## Local Python Environment
+## Shared Python CLI Tool
 
-This skill should use a repo-local Python environment rather than a global
-install.
+This skill should use a shared `uv`-managed installation of `mlx-whisper`,
+rather than creating a repo-local `.venv`.
 
-Create the virtual environment from the repository root:
+This avoids downloading and installing `mlx-whisper` and its dependencies
+separately for every project.
+
+### One-Time Setup
+
+Install `uv` and `ffmpeg`:
 
 ```bash
-python3 -m venv .venv
+brew install uv ffmpeg
+
+Install `mlx-whisper` as a global CLI tool:
+
+```bash
+uv tool install mlx-whisper
 ```
 
-Activate it:
+Verify the command is available:
 
 ```bash
-source .venv/bin/activate
+mlx_whisper --help
 ```
 
-Install `mlx-whisper` into the local environment:
+You can also inspect the installed tool
 
 ```bash
-pip install mlx-whisper
-```
-
-Verify the package is available in the local environment:
-
-```bash
-./.venv/bin/mlx_whisper --help
+uv tool list
+which mlx_whisper
 ```
 
 ## Recommended Invocation Model
 
-Do not rely on whichever `python3` or `pip` happens to be active globally.
-Prefer calling the virtualenv binaries explicitly.
+Do not rely on a repo-local .venv for this skill.
 
-Example transcription command:
+Call the globally available uv-managed CLI command directly
 
 ```bash
-./.venv/bin/mlx_whisper "{filepath}" \
+mlx_whisper "{filepath}" \
   --model mlx-community/whisper-large-v3-mlx \
   --output-format txt
 ```
+## Updating
 
-`mlx-whisper` is installed as a console script. Do not use
-`python -m mlx_whisper`; that package does not expose `mlx_whisper.__main__`.
-
-If the skill checks whether `mlx-whisper` is installed, it should also use the
-same local environment:
+To upgrade mlx-whisper later:
 
 ```bash
-./.venv/bin/python -m pip show mlx-whisper
+ub tool upgrade mlx-whisper
 ```
 
-This avoids a mismatch where `pip show` succeeds in one Python environment but
-`python3 -m mlx_whisper` runs in another.
+## Removing
+
+To uninstall it:
+
+```bash
+uv tool uninstall mlx-whisper
+```
 
 ## First Run Behavior
 

@@ -80,6 +80,39 @@ the required config.
 
 ## Step 2 — Scan Apple Notes
 
+Apple Notes is a GUI automation source, so treat it as flaky until proven
+available in the current execution environment.
+
+### 2a. Preflight Notes automation
+
+Before the full scan, run a minimal connectivity check:
+
+```bash
+osascript -e 'tell application "Notes" to count notes'
+```
+
+If this fails with errors such as:
+
+- `Expected class name but found identifier`
+- `Connection invalid`
+- Automation permission prompts or denials
+
+then do **not** continue to the full scan. Report that the skill requires:
+
+- macOS
+- Apple Notes available in a normal GUI session
+- user-granted Automation permission for the terminal/agent process
+- an execution context allowed to talk to GUI apps
+
+In sandboxed agent environments, the same command may fail in the sandbox but
+work when run with approved elevated permissions. If the agent has an
+escalation mechanism, retry the preflight and full scan with permission instead
+of treating the note corpus as empty.
+
+Do not update `processed.txt` if preflight fails.
+
+### 2b. Full scan
+
 Run `osascript` to retrieve Apple Notes metadata and plaintext content.
 
 Use this AppleScript pattern:
@@ -125,6 +158,11 @@ Each record is:
 note_id <US> note_name <US> folder_name <US> creation_date <US> modification_date <US> plaintext
 ```
 
+Immediately parse the scan into structured records keyed by `note_id`. Do not
+use note titles as internal identifiers; titles are mutable, may contain curly
+punctuation, and may not be unique. Use titles only for display, slugs, and
+human-facing summaries.
+
 If Apple Notes access fails, report that the skill requires:
 - macOS
 - Apple Notes available in a GUI session
@@ -161,6 +199,15 @@ Manifest rules:
 - If note ID is absent: note is new and eligible
 - If note ID exists and modification date matches: skip as already processed
 - If note ID exists and modification date is newer/different: re-evaluate
+
+Parsing guidance:
+- Treat Apple date strings as localized display text, not as durable timestamps.
+- When possible, normalize dates to ISO-8601 or epoch seconds in any temporary
+  parsed representation used during the run.
+- Keep the original Apple modification date text in `processed.txt` because it
+  is what AppleScript returns and is useful for human debugging.
+- Compare processed versions by exact note ID plus exact modification date text
+  unless a normalized timestamp is also stored by a future manifest version.
 
 If no candidate notes remain, report:
 
@@ -217,9 +264,13 @@ For each note marked relevant:
 
 ### 5a. Write the raw note file
 
-Create `{raw_output_dir}/{date}-{slug}.md` where:
+Create `{raw_output_dir}/{date}-{slug}-{short_note_id}.md` where:
 - `date` is derived from the note modification date when possible
 - `slug` is a filesystem-safe form of the note title
+- `short_note_id` is a short stable hash or suffix derived from `note_id`
+
+The note-ID suffix prevents collisions from duplicate titles and repeated
+edited versions of the same note.
 
 Format:
 
@@ -236,6 +287,10 @@ Capture method: Apple Notes via osascript
 ```
 
 Do not paraphrase or clean the note text. `raw/` is immutable.
+
+Before writing, check whether the target path already exists. If it does, do
+not overwrite it; add a deterministic numeric suffix or use a longer note-ID
+hash.
 
 ### 5b. Run the standard ingest workflow
 
@@ -334,6 +389,12 @@ Log updated: wiki/log.md
   configurable. Do not hardcode them.
 - **Use plaintext, not HTML.** The note body may contain HTML markup. In v1,
   the ingest source is the note's plaintext field.
+- **Preflight Apple Notes automation.** Always run the minimal `count notes`
+  check before the full scan. Sandbox/GUI permission failures are common; stop
+  cleanly without touching the manifest if Notes cannot be reached.
+- **Use note IDs internally.** Never key processing logic off exact note titles.
+  Titles can change, duplicate, and contain Unicode punctuation that breaks
+  brittle string matching.
 - **Manifest is append-only.** Never rewrite or deduplicate the manifest file.
   Use the most recent line for a note ID when deciding whether a note is new.
 - **raw/ is immutable.** Once a note is written to `raw/transcripts/`, never
@@ -342,8 +403,23 @@ Log updated: wiki/log.md
 - **Ambiguous relevance: ask.** Do not guess when multiple wikis are plausible.
 - **Skip unreadable notes.** Password-protected or unreadable notes must be
   reported and skipped.
+- **Generate collision-resistant filenames.** Include date, slug, and a short
+  note-ID hash or suffix. Never overwrite an existing raw note file.
 - **One commit per batch.** If multiple notes are ingested in one run, commit
   them together.
+
+## Known Edge Cases
+
+- Apple Notes automation may fail in sandboxed or headless contexts even when
+  it works in Terminal. Retry with approved GUI/Automation permissions when
+  available.
+- `container of n` may fail for Exchange-synced or orphaned notes. Keep the
+  inner folder `try` block and default folder to `Unknown`.
+- Apple date strings are localized and may include non-breaking spaces or
+  locale-specific punctuation. Normalize for in-run comparisons when possible.
+- Notes with image-only content may produce near-empty plaintext and should be
+  skipped as low-signal unless the user explicitly asks to handle attachments.
+- Duplicate note titles are legal. The Apple note ID is the durable identity.
 
 ---
 

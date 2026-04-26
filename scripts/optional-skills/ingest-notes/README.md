@@ -41,10 +41,13 @@ Before running this skill, the user needs:
 
 This skill reads Apple Notes through AppleScript executed with `osascript`.
 
+Apple Notes is a GUI automation source. Always run a minimal preflight before
+the full scan.
+
 Simple connectivity test:
 
 ```bash
-osascript -e 'tell application "Notes" to get name of every note'
+osascript -e 'tell application "Notes" to count notes'
 ```
 
 More detailed test:
@@ -66,6 +69,13 @@ If these commands fail, check:
 - you are running in a normal macOS GUI session
 - Terminal or your agent has permission to control Notes
 - Notes is available on this machine
+- your agent is not blocked by a sandbox from talking to GUI apps
+
+Observed failure modes include errors such as `Connection invalid`,
+`Expected class name but found identifier`, or Automation permission denials.
+In agent sandboxes, the same `osascript` command may fail until it is rerun
+with approved elevated permissions. Treat this as an automation access failure,
+not as "no notes found." Do not update `processed.txt` if preflight fails.
 
 ## Config
 
@@ -82,7 +92,7 @@ Recommended value format:
 
 ```yaml
 lookback_days: 7
-raw_output_dir: "raw/articles"
+raw_output_dir: "raw/transcripts"
 wiki: "Your Wiki Name"
 ```
 
@@ -101,6 +111,10 @@ Instead, it:
 1. scans notes modified within the lookback window
 2. checks `processed.txt` to skip unchanged notes
 3. uses semantic reasoning to decide if each note belongs to the current wiki
+
+The Apple note ID is the durable identity. Do not key processing logic off
+note titles, because titles can change, duplicate, and contain Unicode
+punctuation. Titles are for display and filename slugs only.
 
 If a note might belong to another wiki, the agent should ask before ingesting
 it.
@@ -127,11 +141,24 @@ Recommended behavior:
 - append new lines instead of rewriting history
 - the latest line for a note ID is the current processed state
 - if the note changes later, it can be re-ingested
+- keep the original Apple modification date text for human debugging
+- normalize date strings to ISO-8601 or epoch timestamps in temporary parsing
+  when possible, because Apple date strings are localized
 
 ## Raw Output
 
 Each relevant Apple Note should become one raw markdown file in
-`raw/articles/` or the configured raw output directory.
+`raw/transcripts/` or the configured raw output directory.
+
+Recommended filename format:
+
+```text
+{YYYY-MM-DD}-{slug}-{short_note_id}.md
+```
+
+Include a short note-ID hash or suffix so duplicate titles and edited note
+versions do not collide. Never overwrite an existing raw file; if a collision
+still happens, add a deterministic numeric suffix or use a longer note-ID hash.
 
 Recommended structure:
 
@@ -159,6 +186,18 @@ Before the first run, the user should:
 3. Create an empty `processed.txt` file if it does not already exist.
 4. Make sure recent notes contain enough context for the agent to route them
    into the current wiki.
+
+## Robustness Notes
+
+- Run the `count notes` preflight before the full scan.
+- If preflight fails, stop without updating `processed.txt`.
+- Retry with approved elevated permissions when the failure is caused by
+  sandboxed GUI automation access.
+- Keep the guarded folder/container lookup in AppleScript; some Notes accounts
+  throw errors when `container of n` is unavailable.
+- Use plaintext only in v1 and skip image-only or near-empty notes.
+- Use note IDs for dedupe and routing state; do not depend on exact title
+  matching.
 
 ## Notes
 

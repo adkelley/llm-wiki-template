@@ -129,16 +129,16 @@ Proceeding to transcribe...
 
 Use auto-detection to select the transcription method.
 
-### Check 1: mlx-whisper (local, preferred)
+### Check 1: mlx-whisper 
 
 ```bash
-./.venv/bin/python -m pip show mlx-whisper
+mlx_whisper --help
 ```
 
 If installed, transcribe:
 
 ```bash
-./.venv/bin/mlx_whisper "{filepath}" \
+mlx_whisper "{filepath}" \
   --model mlx-community/whisper-large-v3-mlx \
   --output-format txt
 ```
@@ -163,13 +163,10 @@ Parse the JSON response `text` field for the transcript.
 
 ### If neither method is available:
 
-```
-Transcription tool not available.
-
 To use local transcription (recommended for Apple Silicon Mac):
-  python3 -m venv .venv
-  source .venv/bin/activate
-  pip install mlx-whisper
+```bash
+uv tool install mlx-whisper
+```
 
 To use the OpenAI API:
   export OPENAI_API_KEY=sk-...

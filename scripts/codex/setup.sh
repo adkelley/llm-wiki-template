@@ -58,6 +58,24 @@ read_skill_metadata() {
   ' "$skill_md"
 }
 
+install_new_skill() {
+  local skill_path="$1"
+  local destination_path="$2"
+  local skill_name="$3"
+
+  cp -R "$skill_path" "$destination_path"
+  echo "Installed $skill_name"
+}
+
+update_existing_skill() {
+  local skill_path="$1"
+  local destination_path="$2"
+  local skill_name="$3"
+
+  cp "$skill_path/SKILL.md" "$destination_path/SKILL.md"
+  echo "Updated $skill_name SKILL.md"
+}
+
 setup_codex() {
   local settings_file
   local codex_master_file
@@ -81,6 +99,7 @@ install_optional_skills() {
   local source_skills_dir="$repo_root/scripts/optional-skills"
   local target_skills_dir="$repo_root/skills"
   local found_any=false
+  local shown_any=false
   local install_mode
   local skill_path
   local skill_name
@@ -97,16 +116,24 @@ install_optional_skills() {
     return 0
   fi
 
-  read -r -p "Optional skills: [r]eview each, install [a]ll, or [s]kip? [r/a/S]: " install_mode
+  read -r -p "Optional skills: [i]nstall new, [u]pdate existing, [r]eview all, or [s]kip? [i/u/r/S]: " install_mode
 
   case "$install_mode" in
-    r|R|review|REVIEW)
+    i|I|install|INSTALL|install-new|INSTALL-NEW)
+      install_mode="install"
       ;;
-    a|A|all|ALL)
-      install_mode="all"
+    u|U|update|UPDATE|update-existing|UPDATE-EXISTING)
+      install_mode="update"
+      ;;
+    r|R|review|REVIEW|review-all|REVIEW-ALL)
+      install_mode="review"
+      ;;
+    ""|s|S|skip|SKIP)
+      echo "Skipping optional skill installation."
+      return 0
       ;;
     *)
-      echo "Skipping optional skill installation."
+      echo "Unrecognized choice. Skipping optional skill installation."
       return 0
       ;;
   esac
@@ -123,16 +150,15 @@ install_optional_skills() {
     skill_display_name="$(printf '%s\n' "$metadata" | sed -n 's/^NAME=//p')"
     skill_description="$(printf '%s\n' "$metadata" | sed -n 's/^DESCRIPTION=//p')"
 
-    if [ "$install_mode" = "all" ]; then
-      if [ -e "$destination_path" ]; then
-        echo "Skipping $skill_name because it already exists at $destination_path"
-        continue
-      fi
-
-      cp -R "$skill_path" "$destination_path"
-      echo "Installed $skill_name"
+    if [ "$install_mode" = "install" ] && [ -e "$destination_path" ]; then
       continue
     fi
+
+    if [ "$install_mode" = "update" ] && [ ! -e "$destination_path" ]; then
+      continue
+    fi
+
+    shown_any=true
 
     echo
     echo "Optional skill: $skill_display_name"
@@ -145,29 +171,49 @@ install_optional_skills() {
     fi
 
     if [ -e "$destination_path" ]; then
-      echo "Skipping $skill_name because it already exists at $destination_path"
-      continue
+      read -r -p "Update optional skill '$skill_name' SKILL.md only? [y/N/q]: " answer
+
+      case "$answer" in
+        y|Y|yes|YES)
+          update_existing_skill "$skill_path" "$destination_path" "$skill_name"
+          ;;
+        q|Q|quit|QUIT)
+          echo "Stopped installing optional skills."
+          break
+          ;;
+        *)
+          echo "Skipped $skill_name"
+          ;;
+      esac
+    else
+      read -r -p "Install optional skill '$skill_name'? [y/N/q]: " answer
+
+      case "$answer" in
+        y|Y|yes|YES)
+          install_new_skill "$skill_path" "$destination_path" "$skill_name"
+          ;;
+        q|Q|quit|QUIT)
+          echo "Stopped installing optional skills."
+          break
+          ;;
+        *)
+          echo "Skipped $skill_name"
+          ;;
+      esac
     fi
-
-    read -r -p "Install optional skill '$skill_name'? [y/N/q]: " answer
-
-    case "$answer" in
-      y|Y|yes|YES)
-        cp -R "$skill_path" "$destination_path"
-        echo "Installed $skill_name"
-        ;;
-      q|Q|quit|QUIT)
-        echo "Stopped installing optional skills."
-        break
-        ;;
-      *)
-        echo "Skipped $skill_name"
-        ;;
-    esac
   done
 
   if [ "$found_any" = false ]; then
     echo "No top-level optional skills with SKILL.md were found in $source_skills_dir"
+  elif [ "$shown_any" = false ]; then
+    case "$install_mode" in
+      install)
+        echo "No new optional skills are available to install."
+        ;;
+      update)
+        echo "No installed optional skills are available to update."
+        ;;
+    esac
   fi
 }
 

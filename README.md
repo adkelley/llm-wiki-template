@@ -152,7 +152,7 @@ The generated `.claude/settings.local.json` config stores Claude Code auto-memor
 
 - the repository should already be initialized as a Git repository
 - existing files are preserved where possible
-- existing optional skills are skipped rather than overwritten
+- existing optional skills can be updated by replacing only `SKILL.md`
 - after setup, review and customize `CLAUDE.md`
 - be sure to set the `Domain` section in `CLAUDE.md`
 
@@ -176,7 +176,7 @@ This setup script can:
 
 - the repository should already be initialized as a Git repository
 - existing files are preserved where possible
-- existing optional skills are skipped rather than overwritten
+- existing optional skills can be updated by replacing only `SKILL.md`
 - after setup, review and customize `AGENT.md`
 - be sure to set the `Domain` section in `AGENT.md`
 
