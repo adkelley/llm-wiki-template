@@ -105,7 +105,8 @@ type: comparison
 title: "Comparing X vs Y"
 sources: [[source1]], [[source2]]
 filed_from_query: true
-date: YYYY-MM-DD
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
 ---
 
 ### Synthesis Pages (wiki/syntheses/)
@@ -114,7 +115,8 @@ type: synthesis
 title: "Synthesis Title"
 sources: [[source1]], [[source2]]
 filed_from_query: true
-date: YYYY-MM-DD
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
 ---
 
 ## Ingest Workflow
