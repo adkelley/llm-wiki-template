@@ -1,6 +1,6 @@
 {
   "userIgnoreFilters": ["node_modules/", ".venv/", ".git/", ".claude/"],
   "newFileLocation": "folder",
-  "newFileFolderPath": "raw/articles",
+  "newFileFolderPath": "raw/",
   "attachmentFolderPath": "raw/assets"
 }

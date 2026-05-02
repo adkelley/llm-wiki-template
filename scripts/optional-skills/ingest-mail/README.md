@@ -23,7 +23,7 @@ The intended flow is:
 3. Scan recent messages in those configured accounts and mailboxes.
 4. Use semantic reasoning to decide which emails belong to the current wiki.
 5. Show one batch review and wait for approval.
-6. Save approved emails into `raw/transcripts/`.
+6. Save approved emails into `raw/`.
 7. Run the normal wiki ingest workflow.
 8. Record processed message IDs and dates so unchanged emails are not handled
    twice.
@@ -130,7 +130,7 @@ Recommended value format:
 
 ```yaml
 lookback_days: 14
-raw_output_dir: "raw/transcripts"
+raw_output_dir: "raw/"
 accounts:
   - "Google"
 mailboxes:
@@ -219,7 +219,7 @@ Recommended behavior:
 ## Raw Output
 
 Each approved Apple Mail message should become one raw markdown file in
-`raw/transcripts/` or the configured raw output directory.
+`raw/` or the configured raw output directory.
 
 Recommended filename format:
 

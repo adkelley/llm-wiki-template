@@ -31,7 +31,7 @@ Recommended `config.md`:
 
 ```yaml
 lookback_days: 14
-raw_output_dir: "raw/transcripts"
+raw_output_dir: "raw/"
 accounts:
   - "Google"
 mailboxes:
@@ -120,7 +120,7 @@ Suggested log entry:
 
 ```text
 ## [YYYY-MM-DD] ingest | {subject} (email)
-Source: raw/transcripts/{filename}.md
+Source: raw/{filename}.md
 Original message ID: {message_id}
 Account: {account}
 Mailbox: {mailbox}

@@ -20,7 +20,7 @@ The intended flow is:
 1. Sync `.m4a` voice memos from JustRecord into iCloud Drive.
 2. Detect new files in the JustRecord iCloud directory.
 3. Transcribe them with a repo-local `mlx-whisper` install.
-4. Save relevant transcripts into `raw/transcripts/`.
+4. Save relevant transcripts into `raw/`.
 5. Run the normal wiki ingest workflow.
 6. Record processed filenames so the same memo is not handled twice.
 

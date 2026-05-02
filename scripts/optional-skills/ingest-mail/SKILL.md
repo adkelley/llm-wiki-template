@@ -6,7 +6,7 @@ description: |
   my email", or asks to pull in relevant Mail messages. Scans Apple Mail on
   macOS via osascript, limited to configured accounts and mailboxes, selects
   recent messages, evaluates each message for wiki relevance, asks for batch
-  approval, saves approved emails into raw/transcripts/, and runs the
+  approval, saves approved emails into raw/, and runs the
   standard wiki ingest workflow. Tracks message IDs and date strings in a
   manifest so unchanged messages are skipped on future runs. Always read
   config.md and processed.txt before scanning.
@@ -105,7 +105,7 @@ installation) with at least:
 # ingest-mail config
 
 lookback_days: 14
-raw_output_dir: "raw/transcripts"
+raw_output_dir: "raw/"
 accounts:
   - "Google"
 mailboxes:
@@ -505,7 +505,7 @@ This keeps the manifest append-only while still allowing manual reprocessing.
 Per CLAUDE.md git procedure:
 
 ```bash
-git add raw/transcripts/ wiki/
+git add raw/ wiki/
 ```
 
 Do not stage `.claude/` or `last_scan.txt`. Do not push.
@@ -555,7 +555,7 @@ Log updated: wiki/log.md
 - **Manifest is append-only.** Never rewrite or deduplicate the manifest file.
   Use the most recent line for a message ID when deciding whether a message is
   new.
-- **raw/ is immutable.** Once an email is written to `raw/transcripts/`, never
+- **raw/ is immutable.** Once an email is written to `raw/`, never
   modify it in place.
 - **Evaluate before ingesting.** Never ingest every recent message blindly.
 - **Batch approval is required.** Do not write raw files or update the
@@ -592,7 +592,7 @@ Log updated: wiki/log.md
 
 This skill makes Apple Mail a controlled wiki source inbox:
 
-**email -> /ingest-mail -> batch approval -> raw/transcripts/ -> standard ingest -> wiki**
+**email -> /ingest-mail -> batch approval -> raw/ -> standard ingest -> wiki**
 
 The core idea is to preserve only durable, approved email content as immutable
 raw source material and let the normal wiki ingest flow do the synthesis and

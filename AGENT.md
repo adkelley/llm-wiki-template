@@ -149,6 +149,7 @@ real active wiki as well.
 - Do not revert user changes.
 - Keep changes scoped to the user's request.
 - Do not stage, commit, or push unless asked.
+- Read `commit.md` to understand how to stucture commit messages
 - Do not stage `.DS_Store`, `.obsidian/`, `.claude/`, `commit.md`, or transient
   local configuration.
 - Use `rg` for repository search.

@@ -7,7 +7,7 @@ description: |
   Scans the JustPressRecord iCloud directory for unprocessed .m4a files,
   transcribes each using mlx-whisper (local) or OpenAI Whisper API
   (fallback), evaluates wiki relevance, saves qualifying transcripts to
-  raw/transcripts/, and runs the standard wiki ingest workflow. Marks all
+  raw/, and runs the standard wiki ingest workflow. Marks all
   evaluated files in a manifest so they are not re-processed on future
   runs. Updates wiki/log.md on completion.
   Always read config.md and processed.txt before scanning. If config.md
@@ -225,7 +225,7 @@ For each memo marked relevant:
 
 ### 5a. Write the raw transcript
 
-Create `raw/transcripts/{stem}.md` where `{stem}` is the audio filename
+Create `raw/{stem}.md` where `{stem}` is the audio filename
 without extension (e.g., `20260423-14-32-00.m4a` becomes
 `20260423-14-32-00.md`).
 
@@ -245,7 +245,7 @@ Do not correct the transcript. Do not paraphrase. Raw transcripts in
 
 ### 5b. Run the standard ingest workflow
 
-Per CLAUDE.md, the ingest workflow for `raw/transcripts/{stem}.md`:
+Per CLAUDE.md, the ingest workflow for `raw/{stem}.md`:
 
 1. Read the transcript
 2. Present 3–5 key takeaways to the user
@@ -260,7 +260,7 @@ Log entry format for voice memos:
 
 ```
 ## [YYYY-MM-DD] ingest | {first meaningful phrase} (voice memo)
-Source: raw/transcripts/{stem}.md
+Source: raw/{stem}.md
 Original audio: {original filename}
 Transcription: {method and model}
 Pages created: ...
@@ -291,7 +291,7 @@ One filename per line, no path, no quotes. Skipped files are recorded too
 Per CLAUDE.md git procedure:
 
 ```bash
-git add raw/transcripts/ wiki/
+git add raw/ wiki/
 ```
 
 Do not stage `.claude/`. Do not push.
@@ -341,7 +341,7 @@ Log updated: wiki/log.md
   iCloud bundle ID varies by JustPressRecord version and macOS account.
 - **Manifest is append-only.** Never remove entries. Manual removal is the
   only way to force re-processing.
-- **raw/ is immutable.** Once a transcript is written to raw/transcripts/,
+- **raw/ is immutable.** Once a transcript is written to raw/,
   never modify it. The verbatim text is the permanent record.
 - **Do not correct transcripts.** Whisper produces imperfect output for
   conversational speech. Preserve it — the ingest workflow synthesizes;
@@ -383,10 +383,10 @@ and share the path it shows.
 This skill closes the gap identified in [[meeting-to-wiki-gap]]: audio
 tools capture brilliantly but do not compile. The pipeline is:
 
-**speak → JustPressRecord → iCloud sync → /ingest-voice → raw/transcripts/ →
+**speak → JustPressRecord → iCloud sync → /ingest-voice → raw/ →
 standard ingest → wiki**
 
-Existing raw transcripts (e.g., `raw/transcripts/LLM-Wiki combined with
+Existing raw transcripts (e.g., `raw/LLM-Wiki combined with
 Code project.md`) established the convention this skill follows. The
-`.pdf` originals in raw/transcripts/ were Apple-transcribed exports;
+`.pdf` originals in raw/ were Apple-transcribed exports;
 this skill produces higher-quality `.md` equivalents using Whisper.

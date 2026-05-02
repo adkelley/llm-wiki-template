@@ -31,7 +31,7 @@ The setup script can replace `.obsidian/app.json` with the following configurati
     ".claude/"
   ],
   "newFileLocation": "folder",
-  "newFileFolderPath": "raw/articles",
+  "newFileFolderPath": "raw/",
   "attachmentFolderPath": "raw/assets"
 }
 ```

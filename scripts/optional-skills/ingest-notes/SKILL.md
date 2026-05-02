@@ -5,7 +5,7 @@ description: |
   types "/ingest-notes", says "ingest notes", "process Apple Notes", or
   asks to pull in recent notes. Scans Apple Notes on macOS via osascript,
   selects notes modified within a configurable lookback window, evaluates
-  each note for wiki relevance, saves qualifying notes into raw/transcripts/,
+  each note for wiki relevance, saves qualifying notes into raw/,
   and runs the standard wiki ingest workflow. Tracks Apple note IDs and
   modification dates in a manifest so unchanged notes are skipped and
   edited notes can be re-ingested later. Always read config.md and
@@ -67,7 +67,7 @@ installation) with at least:
 # ingest-notes config
 
 lookback_days: 7
-raw_output_dir: "raw/transcripts"
+raw_output_dir: "raw/"
 wiki: "your-wiki-name"
 ```
 
@@ -348,7 +348,7 @@ re-ingested.
 Per CLAUDE.md git procedure:
 
 ```bash
-git add raw/transcripts/ wiki/
+git add raw/ wiki/
 ```
 
 Do not stage `.claude/`. Do not push.
@@ -397,7 +397,7 @@ Log updated: wiki/log.md
   brittle string matching.
 - **Manifest is append-only.** Never rewrite or deduplicate the manifest file.
   Use the most recent line for a note ID when deciding whether a note is new.
-- **raw/ is immutable.** Once a note is written to `raw/transcripts/`, never
+- **raw/ is immutable.** Once a note is written to `raw/`, never
   modify it in place.
 - **Evaluate before ingesting.** Never ingest every recent note blindly.
 - **Ambiguous relevance: ask.** Do not guess when multiple wikis are plausible.
@@ -427,7 +427,7 @@ Log updated: wiki/log.md
 
 This skill makes Apple Notes a wiki capture inbox:
 
-**capture in Notes → /ingest-notes → raw/transcripts/ → standard ingest → wiki**
+**capture in Notes → /ingest-notes → raw/ → standard ingest → wiki**
 
 The core idea is simple: Apple Notes is where many ideas first appear. This
 skill turns those notes into immutable raw sources and lets the normal wiki

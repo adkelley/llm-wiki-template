@@ -67,7 +67,7 @@ Every wiki page MUST have YAML frontmatter. Use these schemas:
 type: source
 title: "Article/Paper Title"
 slug: summary-{slug}
-source_file: raw/articles/{filename}.md
+source_file: raw/{filename}.md
 author: "Author Name"
 date_published: YYYY-MM-DD
 date_ingested: YYYY-MM-DD
@@ -168,7 +168,7 @@ Each log entry MUST start with this prefix for parsability:
 
 Example:
 ## [2026-04-12] ingest | Mixture of Experts Efficiency Study
-Source: raw/articles/2026-04-moe-efficiency.md
+Source: raw/2026-04-moe-efficiency.md
 Pages created: wiki/sources/summary-moe-efficiency.md
 Pages updated: wiki/concepts/mixture-of-experts.md,
                wiki/concepts/scaling-laws.md

@@ -21,7 +21,7 @@ The intended flow is:
 2. Run `/ingest-notes`.
 3. Scan notes modified recently.
 4. Use semantic reasoning to decide which notes belong to the current wiki.
-5. Save relevant notes into `raw/transcripts/`.
+5. Save relevant notes into `raw/`.
 6. Run the normal wiki ingest workflow.
 7. Record processed note IDs and modification dates so unchanged notes are not
    handled twice.
@@ -92,7 +92,7 @@ Recommended value format:
 
 ```yaml
 lookback_days: 7
-raw_output_dir: "raw/transcripts"
+raw_output_dir: "raw/"
 wiki: "Your Wiki Name"
 ```
 
@@ -148,7 +148,7 @@ Recommended behavior:
 ## Raw Output
 
 Each relevant Apple Note should become one raw markdown file in
-`raw/transcripts/` or the configured raw output directory.
+`raw/` or the configured raw output directory.
 
 Recommended filename format:
 

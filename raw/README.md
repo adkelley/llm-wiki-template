@@ -3,13 +3,7 @@
 This directory stores the repository’s source material and other immutable inputs.
 
 ## Subdirectories
-
-- `articles/` — clipped web articles, such as captures created with Obsidian Web Clipper
-- `assets/` — downloaded images and other attached media
-- `data/` — structured data files such as CSV, JSON, and benchmark results
-- `papers/` — PDFs and other academic paper sources
-- `repos/` — repository source materials such as `README.md` files and architecture notes from codebases
-- `transcripts/` — meeting notes and podcast or video transcripts
+- `assets/` — downloaded images and other attached media associated with a 'raw file'. For example, media created by the Obsidian web clipper
 
 ## Guidelines
 

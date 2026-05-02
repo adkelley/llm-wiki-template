@@ -120,9 +120,9 @@ done
 This hook will affect files such as:
 
 ```text
-raw/articles/x.md
-raw/papers/y.pdf
-raw/data/z.csv
+raw/x.md
+raw/y.pdf
+raw/z.csv
 ```
 
 ## Tool Setup
