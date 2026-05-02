@@ -74,15 +74,21 @@ updated: YYYY-MM-DD
 
 ## Ingest Workflow
 When I say "ingest [filename]" or "ingest raw/[path]":
-1. Read the source file from raw/.
-2. Discuss key takeaways with me (3–5 bullet points).
-3. Create wiki/sources/summary-{slug}.md with full summary.
-4. Update wiki/index.md — add new page with one-line summary.
-5. Update ALL relevant concept and entity pages with new info.
-6. If new info contradicts an existing page, flag it explicitly.
-7. Create new concept/entity pages if the source introduces them.
-8. Append a structured entry to wiki/log.md (see Log Format below).
-9. A single ingest should touch 5–15 wiki pages.
+1. Run the ingest guard before reading or summarizing the source:
+   `python3 scripts/wiki/ingest_guard.py check raw/[path]`
+2. If the guard reports a duplicate, stop and report the matching manifest
+   record instead of ingesting the file again.
+3. Read the source file from raw/.
+4. Discuss key takeaways with me (3–5 bullet points).
+5. Create wiki/sources/summary-{slug}.md with full summary.
+6. Update wiki/index.md — add new page with one-line summary.
+7. Update ALL relevant concept and entity pages with new info.
+8. If new info contradicts an existing page, flag it explicitly.
+9. Create new concept/entity pages if the source introduces them.
+10. Append a structured entry to wiki/log.md (see Log Format below).
+11. Record the successful ingest:
+    `python3 scripts/wiki/ingest_guard.py record raw/[path]`
+12. A single ingest should touch 5–15 wiki pages.
 
 ## Query Workflow
 When I ask a question:

@@ -2,6 +2,99 @@
 
 This directory contains setup and integration guides for the supported LLM workflows in this repository.
 
+## Shared Wiki Utilities
+
+Reusable, agent-independent wiki utilities should live under `scripts/wiki/`.
+These scripts are intended to be called by generated agent instructions such as
+`AGENT.md` and `CLAUDE.md`, and should work across macOS, Windows, and Linux
+where possible.
+
+The first shared utility is an ingest guard:
+
+```text
+scripts/wiki/ingest_guard.py
+```
+
+The ingest guard helps prevent users from accidentally ingesting duplicate
+material. It records successful ingests in a local JSON Lines manifest:
+
+```text
+.llm-wiki/ingest-manifest.jsonl
+```
+
+Each manifest line is one JSON object. Current records include:
+
+- `schema_version`
+- `source_path`
+- `size_bytes`
+- `byte_sha256`
+- `text_sha256` for plain-text files
+- `ingested_at` for recorded ingests
+
+The current workflow is:
+
+1. compute a SHA-256 hash of the source file bytes
+2. extract and normalize text, then compute a SHA-256 hash of the normalized text
+3. compare both hashes against an ingestion manifest
+4. stop or proceed based on whether a byte or normalized-text duplicate exists
+5. record successful ingests in `.llm-wiki/ingest-manifest.jsonl`
+
+### Ingest Guard Usage
+
+Compute hashes for one file without reading or writing the manifest:
+
+```bash
+python3 scripts/wiki/ingest_guard.py hash raw/README.md
+```
+
+Check whether a candidate file matches a prior ingest:
+
+```bash
+python3 scripts/wiki/ingest_guard.py check raw/README.md
+```
+
+Append a successful ingest record. This refuses byte-identical and
+normalized-text duplicates:
+
+```bash
+python3 scripts/wiki/ingest_guard.py record raw/README.md
+```
+
+Inspect `raw/` against the manifest without writing:
+
+```bash
+python3 scripts/wiki/ingest_guard.py audit
+```
+
+Backfill the manifest from files already present under `raw/`:
+
+```bash
+python3 scripts/wiki/ingest_guard.py index-existing
+```
+
+The default manifest and raw directory can be overridden for testing or custom
+layouts:
+
+```bash
+python3 scripts/wiki/ingest_guard.py \
+  --manifest /tmp/ingest-test.jsonl \
+  --raw-dir raw \
+  audit
+```
+
+Global options such as `--manifest` and `--raw-dir` must appear before the
+subcommand.
+
+The first stdlib-only implementation computes normalized text hashes only for
+plain-text file suffixes such as `.md`, `.txt`, `.csv`, `.json`, `.jsonl`,
+`.html`, and `.htm`. Binary or container formats such as `.pdf`, `.docx`, and
+`.pptx` currently receive only a byte hash. Future versions may add explicit
+text extraction for those formats.
+
+The generated `scripts/codex/AGENT.md` and `scripts/claude/CLAUDE.md` templates
+should explicitly instruct agents to run this guard before ingesting raw
+material once the utility exists.
+
 ## Claude Code
 
 If you are using Claude Code, run:
