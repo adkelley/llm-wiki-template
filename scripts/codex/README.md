@@ -13,10 +13,13 @@ scripts/codex/setup.sh
 The script can:
 
 1. create `./skills/`
-2. copy `scripts/codex/AGENT.md` to `AGENT.md` in the repository root if `AGENT.md` does not already exist
+2. copy `scripts/codex/AGENT.md` to `AGENT.md` in the repository root, or
+   update it when `AGENT.md` still matches the last installed template hash
 3. optionally install shared optional skills into `./skills/`
 
 The installer copies optional skills into your active Codex environment. It does not remove them from the source directory.
+Template hashes are tracked in `.llm-wiki/template-manifest.jsonl` so local
+edits to `AGENT.md` are preserved.
 
 ## Optional skills
 

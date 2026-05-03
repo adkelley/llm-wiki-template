@@ -23,12 +23,15 @@ The script can:
 }
 ```
 
-5. copy `scripts/claude/CLAUDE.md` to `CLAUDE.md` in the repository root if `CLAUDE.md` does not already exist
+5. copy `scripts/claude/CLAUDE.md` to `CLAUDE.md` in the repository root, or
+   update it when `CLAUDE.md` still matches the last installed template hash
 6. optionally install Claude-specific skills into `.claude/skills/`
 
 The generated `.claude/settings.local.json` tells Claude Code to store repository-specific auto-memory in `.claude/memory` inside the project, rather than in Claude Code’s default global memory location.
 
 The installer copies optional skills into your active Claude environment. It does not remove them from the source directory.
+Template hashes are tracked in `.llm-wiki/template-manifest.jsonl` so local
+edits to `CLAUDE.md` are preserved.
 
 ## Optional skills
 

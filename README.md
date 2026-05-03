@@ -143,7 +143,8 @@ This setup script can:
 - create `.claude/skills/`
 - create `.claude/memory/`
 - create `.claude/settings.local.json`
-- copy `scripts/claude/CLAUDE.md` to `CLAUDE.md` if it does not already exist
+- copy `scripts/claude/CLAUDE.md` to `CLAUDE.md`, or update it when the
+  installed file still matches the last template hash
 - optionally install Claude-related skills
 
 The generated `.claude/settings.local.json` config stores Claude Code auto-memory inside the repository at `.claude/memory` instead of using Claude Code's default global location.
@@ -169,7 +170,8 @@ scripts/codex/setup.sh
 This setup script can:
 
 - create `./skills/`
-- copy `scripts/codex/AGENT.md` to `AGENT.md` if it does not already exist
+- copy `scripts/codex/AGENT.md` to `AGENT.md`, or update it when the installed
+  file still matches the last template hash
 - optionally install shared optional skills
 
 ### Notes

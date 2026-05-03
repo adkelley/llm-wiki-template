@@ -76,6 +76,61 @@ update_existing_skill() {
   echo "Updated $skill_name SKILL.md"
 }
 
+template_status() {
+  local template_file="$1"
+  local target_file="$2"
+
+  (cd "$repo_root" && python3 scripts/wiki/template_guard.py status \
+    --template "$template_file" \
+    --target "$target_file") \
+    | python3 -c 'import json, sys; print(json.load(sys.stdin)["status"])'
+}
+
+record_installed_template() {
+  local template_file="$1"
+  local target_file="$2"
+
+  (cd "$repo_root" && python3 scripts/wiki/template_guard.py record \
+    --template "$template_file" \
+    --target "$target_file") \
+    >/dev/null
+}
+
+install_managed_template() {
+  local template_file="$1"
+  local target_file="$2"
+  local target_name="$3"
+  local status
+
+  status="$(template_status "$template_file" "$target_file")"
+
+  case "$status" in
+    missing)
+      cp "$template_file" "$target_file"
+      record_installed_template "$template_file" "$target_file"
+      echo "Copied $target_name to $target_file"
+      ;;
+    replace)
+      cp "$template_file" "$target_file"
+      record_installed_template "$template_file" "$target_file"
+      echo "Updated $target_name from the latest template"
+      ;;
+    record)
+      record_installed_template "$template_file" "$target_file"
+      echo "Recorded current $target_name template hash"
+      ;;
+    current)
+      echo "Skipped updating $target_name (already current)"
+      ;;
+    preserve)
+      echo "Skipped updating $target_name (local changes detected)"
+      ;;
+    *)
+      echo "Skipped updating $target_name (unrecognized template status: $status)"
+      ;;
+  esac
+}
+
 setup_claude() {
   local settings_file
   local claude_master_file
@@ -103,12 +158,7 @@ EOF
   claude_master_file="$repo_root/CLAUDE.md"
   claude_template_file="$repo_root/scripts/claude/CLAUDE.md"
 
-  if [ ! -f "$claude_master_file" ]; then
-    cp "$claude_template_file" "$claude_master_file"
-    echo "Copied CLAUDE.md to $claude_master_file"
-  else
-    echo "Skipped creating CLAUDE.md (already exists)"
-  fi
+  install_managed_template "$claude_template_file" "$claude_master_file" "CLAUDE.md"
 }
 
 install_optional_skills() {

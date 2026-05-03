@@ -95,6 +95,49 @@ The generated `scripts/codex/AGENT.md` and `scripts/claude/CLAUDE.md` templates
 should explicitly instruct agents to run this guard before ingesting raw
 material once the utility exists.
 
+## Managed Template Hashes
+
+The setup scripts use a separate template guard to track hashes for installed
+agent instruction templates:
+
+```text
+scripts/wiki/template_guard.py
+```
+
+```text
+.llm-wiki/template-manifest.jsonl
+```
+
+This lets `scripts/codex/setup.sh` and `scripts/claude/setup.sh` distinguish an
+old untouched template from a user-edited `AGENT.md` or `CLAUDE.md`.
+
+Check the status of an installed template:
+
+```bash
+python3 scripts/wiki/template_guard.py status \
+  --template scripts/codex/AGENT.md \
+  --target AGENT.md
+```
+
+Record the template hash after copying or updating a managed template:
+
+```bash
+python3 scripts/wiki/template_guard.py record \
+  --template scripts/codex/AGENT.md \
+  --target AGENT.md
+```
+
+`status` returns one of these statuses:
+
+- `missing` - the target file does not exist and can be created
+- `replace` - the target still matches the last installed template and can be
+  updated
+- `record` - the target already matches the current template but needs a
+  manifest entry
+- `current` - the target matches the current template and manifest
+- `preserve` - the target appears to have local changes and should not be
+  overwritten automatically
+
 ## Claude Code
 
 If you are using Claude Code, run:
