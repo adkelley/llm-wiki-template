@@ -95,6 +95,60 @@ The generated `scripts/codex/AGENT.md` and `scripts/claude/CLAUDE.md` templates
 should explicitly instruct agents to run this guard before ingesting raw
 material once the utility exists.
 
+## YouTube Transcript Capture
+
+The YouTube transcript utility downloads auto-generated captions with `yt-dlp`,
+cleans the WebVTT text, and writes a raw Markdown source file:
+
+```text
+scripts/wiki/youtube_transcript.py
+```
+
+It depends on `yt-dlp` being installed separately. Install `yt-dlp` using the
+official instructions for your operating system, then confirm it works:
+
+```bash
+yt-dlp --version
+```
+
+Basic usage:
+
+```bash
+python3 scripts/wiki/youtube_transcript.py "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+If the video title should be overridden:
+
+```bash
+python3 scripts/wiki/youtube_transcript.py \
+  --title "Readable title override" \
+  "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+The utility can also clean an existing local `.vtt` file. In local-file mode,
+pass source metadata explicitly when available:
+
+```bash
+python3 scripts/wiki/youtube_transcript.py \
+  subtitles.en.vtt \
+  --title "Readable title" \
+  --url "https://www.youtube.com/watch?v=VIDEO_ID" \
+  --published "YYYY-MM-DD"
+```
+
+The generated file is written under `raw/` by default:
+
+```text
+raw/{YYYY-MM-DD-or-undated}-{slugified-title}-{video_id}.md
+```
+
+After creation, run the ingest guard before asking an agent to ingest the raw
+transcript:
+
+```bash
+python3 scripts/wiki/ingest_guard.py check raw/{filename}.md
+```
+
 ## Managed Template Hashes
 
 The setup scripts use a separate template guard to track hashes for installed
