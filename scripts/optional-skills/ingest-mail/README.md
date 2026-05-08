@@ -1,288 +1,197 @@
 # ingest-mail
 
-This directory contains a skill for ingesting selected Apple Mail messages into
-the LLM wiki workflow.
+Himalaya-backed mail ingest for LLM Wiki.
 
-## Platform
+This optional skill scans a user-authorized mailbox with the
+[`himalaya`](https://github.com/pimalaya/himalaya) CLI, returns candidate email
+messages for wiki relevance review, and records evaluated envelope IDs so the
+same messages are not reviewed repeatedly.
 
-This skill is intended for macOS only.
+The skill is read-only with respect to mail. It uses Himalaya commands for
+account listing, folder listing, envelope listing, and preview-only message
+reads. It must not send, delete, move, flag, mark read, or download
+attachments.
 
-It depends on:
+## Requirements
 
-- the Apple Mail app
-- `osascript`
-- a GUI session where Mail automation is allowed
-- configured Mail accounts and mailboxes
+- Himalaya installed and available on `PATH`
+- Himalaya configured with at least one readable account
+- A `config.toml` file in the installed skill directory
+- Python 3.11+ for `tomllib`
 
-## Goal
+Install Himalaya from the upstream project:
 
-The intended flow is:
+- <https://github.com/pimalaya/himalaya>
 
-1. Configure the Apple Mail accounts and mailboxes to scan.
-2. Run `/ingest-mail`.
-3. Scan recent messages in those configured accounts and mailboxes.
-4. Use semantic reasoning to decide which emails belong to the current wiki.
-5. Show one batch review and wait for approval.
-6. Save approved emails into `raw/`.
-7. Run the normal wiki ingest workflow.
-8. Record processed message IDs and dates so unchanged emails are not handled
-   twice.
+Note, as mentioned in the Himalaya installation instructions, Homebrew installs a prebuilt package that 
+cannot customize Cargo features. If your account setup requires optional Himalaya features such as OAuth 2.0 or
+keyring support, use an installation method that supports the needed feature
+set, such as Cargo, Nix, or a source build.
 
-## Mail Automation
+## Runtime Files
 
-This skill reads Apple Mail through AppleScript executed with `osascript`.
-Apple Mail is a GUI automation source. Always run a minimal preflight before
-the full scan.
-
-Simple connectivity test:
-
-```bash
-osascript -e 'tell application "Mail" to count accounts'
-```
-
-Mailbox-level message count test:
-
-```bash
-osascript <<'APPLESCRIPT'
-tell application "Mail"
-	set outputLines to {}
-	repeat with a in accounts
-		try
-			set accountName to name of a
-			repeat with m in mailboxes of a
-				set mailboxName to name of m
-				set messageCount to count of messages of m
-				set end of outputLines to accountName & " | " & mailboxName & " | " & messageCount
-			end repeat
-		on error errMsg number errNum
-			set end of outputLines to "ERROR | " & accountName & " | " & errNum & " | " & errMsg
-		end try
-	end repeat
-	set AppleScript's text item delimiters to linefeed
-	return outputLines as string
-end tell
-APPLESCRIPT
-```
-
-List available account names:
-
-```bash
-osascript <<'APPLESCRIPT'
-tell application "Mail"
-	set outputLines to {}
-	repeat with a in accounts
-		set end of outputLines to name of a
-	end repeat
-	set AppleScript's text item delimiters to linefeed
-	return outputLines as string
-end tell
-APPLESCRIPT
-```
-
-List account and mailbox names:
-
-```bash
-osascript <<'APPLESCRIPT'
-tell application "Mail"
-	set outputLines to {}
-	repeat with a in accounts
-		try
-			set accountName to name of a
-			repeat with m in mailboxes of a
-				set end of outputLines to accountName & " | " & name of m
-			end repeat
-		on error errMsg number errNum
-			set end of outputLines to "ERROR | " & accountName & " | " & errNum & " | " & errMsg
-		end try
-	end repeat
-	set AppleScript's text item delimiters to linefeed
-	return outputLines as string
-end tell
-APPLESCRIPT
-```
-
-If these commands fail, check:
-
-- you are running in a normal macOS GUI session
-- Terminal or your agent has permission to control Mail
-- Mail is available and configured on this machine
-- your agent is not blocked by a sandbox from talking to GUI apps
-
-Observed failure modes can include `Connection invalid`, Automation permission
-denials, or empty results caused by the execution environment rather than by
-Mail itself. Do not update `processed.txt` or `last_scan.txt` if preflight fails.
-
-## Config
-
-The skill expects a config file that stores the lookback window, raw output
-directory, account allowlist, and mailbox allowlist.
-
-Before running the skill, set these values in `config.md`:
-
-- `lookback_days`
-- `raw_output_dir`
-- `accounts`
-- `mailboxes`
-- `folders`
-- `wiki`
-
-Recommended value format:
-
-```yaml
-lookback_days: 14
-raw_output_dir: "raw/"
-accounts:
-  - "Google"
-mailboxes:
-  - "INBOX"
-folders:
-  # User-created folder/label names to scan in addition to mailboxes above.
-  # Use exact names from the account (run discovery to list them).
-  # - "code"
-  # - "market-research"
-wiki: "Your Wiki Name"
-```
-
-Notes:
-
-- `lookback_days` is the maximum number of days to scan. The actual scan
-  window may be shorter — see **Scan Window Optimization** below.
-- `raw_output_dir` should be a writable raw source directory.
-- `accounts` must match Apple Mail account display names.
-- `mailboxes` is for standard Apple Mail mailboxes (INBOX, Sent Mail, etc.).
-- `folders` is for user-created folder/label names. If absent or empty, only
-  `mailboxes` are scanned. Both lists are merged into a single allowlist before
-  the scan runs — Apple Mail's object model treats both as mailboxes under an
-  account.
-- `wiki` is optional but useful when you maintain multiple wikis.
-
-## Scan Window Optimization
-
-Each successful scan writes the current UTC time to `last_scan.txt` as a
-single ISO-8601 line (e.g. `2026-04-27T14:32:05Z`). On the next run, the
-skill reads this timestamp and computes an effective lookback window:
-
-```
-effective_lookback = min(lookback_days, ceil(days_since_last_scan) + 1)
-```
-
-The `+1` day buffer covers Apple Mail sync delays and minor clock skew. If
-`last_scan.txt` is missing, unparseable, or contains a future timestamp
-(negative diff), the skill falls back to `lookback_days` in full.
-
-The effective window is reported before the scan runs:
+In a Codex install, runtime files live in:
 
 ```text
-Scan window: last {N} day(s)
-  (lookback_days=14, last_scan=2026-04-27T14:32:05Z)
+./skills/ingest-mail/
 ```
 
-`last_scan.txt` is written after the osascript output is successfully parsed,
-even when the scan returns zero messages. It is not staged in git commits.
-
-## Candidate Selection
-
-This skill uses explicit account and mailbox allowlists.
-
-It:
-
-1. scans only configured accounts
-2. scans only configured mailboxes within those accounts
-3. filters messages by the lookback window
-4. checks `processed.txt` to skip already evaluated message versions
-5. uses semantic reasoning to decide if each message belongs to the current
-   wiki
-6. waits for batch approval before writing raw files
-
-The Apple Mail message ID is the durable identity. Do not key processing logic
-off subjects, because subjects can repeat, change by thread, or be empty.
-Subjects are for display and filename slugs only.
-
-## Processed Manifest
-
-The processed manifest is a plain text file. Each line represents one
-processed version of an email:
+In a Claude install, runtime files live in:
 
 ```text
-{message_id}\t{date_received_or_sent_text}
+.claude/skills/ingest-mail/
 ```
 
-Recommended behavior:
-
-- one processed email version per line
-- append new lines instead of rewriting history
-- the latest line for a message ID is the current processed state
-- skipped messages are recorded too
-- manual removal of a line allows reprocessing
-- keep the original Apple date text for human debugging
-
-## Raw Output
-
-Each approved Apple Mail message should become one raw markdown file in
-`raw/` or the configured raw output directory.
-
-Recommended filename format:
+The user-managed runtime files are:
 
 ```text
-{YYYY-MM-DD}-email-{slug}-{short_message_id}.md
+config.toml
+state.jsonl
+last_scan.txt
 ```
 
-Include a short message-ID hash or suffix so duplicate subjects do not collide.
-Never overwrite an existing raw file; if a collision still happens, add a
-deterministic numeric suffix or use a longer message-ID hash.
+Do not commit real mailbox config or scan state to the template repository.
 
-Recommended structure:
+## Setup
+
+Copy the example config in the installed skill directory:
+
+```bash
+cp config.example.toml config.toml
+```
+
+Edit `config.toml`:
+
+```toml
+lookback_days = 14
+raw_output_dir = "raw/"
+accounts = ["personal"]
+folders = ["INBOX"]
+max_messages_per_folder = 25
+max_thread_context_messages = 5
+wiki = "your-wiki-name"
+```
+
+`accounts` and `folders` must match Himalaya names exactly.
+`lookback_days` is the maximum scan window. `scan` combines it with
+`last_scan.txt` to compute `scan_window_days`.
+
+Useful discovery commands:
+
+```bash
+himalaya account list --output json
+himalaya folder list --account personal --output json
+```
+
+## Common Commands
+
+Run preflight:
+
+```bash
+python3 scan_mail.py preflight --skill-dir .
+```
+
+Preflight verifies that Himalaya is available, the configured account names
+exist, and the configured folders can be listed without reading message bodies.
+
+Scan envelope candidates only:
+
+```bash
+python3 scan_mail.py scan --skill-dir . --limit 25
+```
+
+The scan output includes `candidate_count` / `candidates` for new messages,
+`scan_window_days`, `thread_context` envelope context on each candidate, and
+`excluded_count` / `excluded` for deterministic skips such as messages already
+recorded in `state.jsonl`.
+
+The `scan` command applies the computed window through Himalaya's query syntax:
 
 ```text
-Subject: {subject}
-Message ID: {message_id}
-Source: Apple Mail
-Account: {account}
-Mailbox: {mailbox}
-From: {sender}
-To: {recipients}
-Sent: {sent_date}
-Received: {received_date}
-Capture method: Apple Mail via osascript
-
-{verbatim plain text body}
+after YYYY-MM-DD order by date desc
 ```
 
-The raw file is the immutable source record. The wiki ingest flow does the
-synthesis afterward.
+`state.jsonl` remains the durable dedupe layer. The date window is an
+optimization.
 
-## What The User Must Do Before Running The Skill
+List envelopes for diagnostics without applying the scan window:
 
-Before the first run, the user should:
+```bash
+python3 scan_mail.py envelope-list --skill-dir .
+```
 
-1. Confirm Apple Mail can be queried from Terminal with `osascript`.
-2. Run the account/mailbox listing command above.
-3. Create or update `config.md` with the desired accounts and mailboxes.
-4. Create an empty `processed.txt` file if it does not already exist.
-5. Make sure the selected mailbox scope is narrow enough for review.
+Thread context in v1 is subject-based envelope context. It strips common
+reply/forward prefixes and is capped by `max_thread_context_messages`; it is
+not full header-based thread reconstruction.
 
-`last_scan.txt` is created automatically after the first successful scan; no
-manual setup is needed.
+Scan candidates with preview-only message bodies:
 
-## Robustness Notes
+```bash
+python3 scan_mail.py scan --skill-dir . --include-messages --limit 10
+```
 
-- Run the `count accounts` preflight before the full scan.
-- Count messages through `mailboxes of account`; root-level `count messages`
-  can fail with `Can't get every message. (-1728)`, and root-level
-  `mailboxes` can include special mailboxes that do not expose `account`.
-- If preflight fails, stop without updating `processed.txt`.
-- Retry with approved elevated permissions when the failure is caused by
-  sandboxed GUI automation access.
-- Guard per-message extraction so one malformed message does not abort the
-  batch.
-- Use full plain text body content in v1; do not preserve attachments or HTML.
-- Use message IDs for dedupe and routing state; do not depend on exact subject
-  matching.
-- Batch approval is required before writing raw files or updating the wiki.
+Generate a fail-closed decisions template:
 
-## Notes
+```bash
+python3 scan_mail.py decisions-template --skill-dir . --limit 10
+```
 
-Apple Mail can be a useful review inbox for durable source material, but email
-often contains sensitive or logistical content. This skill keeps v1 narrow:
-configured accounts, configured mailboxes, explicit batch approval, and
-immutable raw files for approved messages only.
+The template contains one row per new candidate and defaults every `decision`
+to `"ambiguous"`.
+
+Read one message without marking it seen:
+
+```bash
+python3 scan_mail.py message-read --skill-dir . --message-id 123
+```
+
+Export approved messages to raw files:
+
+```bash
+python3 scan_mail.py export-approved --skill-dir . --decisions /path/to/decisions.json
+```
+
+Raw export writes the approved message body plus a labeled thread-context
+section. In v1, that context is related envelope metadata only: envelope IDs,
+subjects, senders, recipients, and dates.
+
+Finalize evaluated decisions:
+
+```bash
+python3 scan_mail.py finalize --skill-dir . --decisions /path/to/decisions.json
+```
+
+Decision files are normal JSON arrays:
+
+```json
+[
+  {
+    "account": "personal",
+    "folder": "INBOX",
+    "envelope_id": "123",
+    "decision": "no"
+  }
+]
+```
+
+`export-approved` writes raw files only for `decision: "yes"`.
+`finalize` appends every supplied decision to `state.jsonl` and writes
+`last_scan.txt`. In the normal skill workflow, run `export-approved`, ingest the
+raw files into the wiki, and only then run `finalize`.
+
+Exit-code categories:
+
+- `2`: config or CLI argument error
+- `3`: Himalaya command error
+- `4`: Himalaya JSON parse error
+- `5`: state or decisions-file error
+- `6`: raw-file write error
+
+## Development
+
+Run tests from the repository root:
+
+```bash
+python3 -m unittest discover scripts/optional-skills/ingest-mail/tests
+python3 -m py_compile scripts/optional-skills/ingest-mail/scan_mail.py
+```

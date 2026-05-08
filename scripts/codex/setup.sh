@@ -63,7 +63,7 @@ install_new_skill() {
   local destination_path="$2"
   local skill_name="$3"
 
-  cp -R "$skill_path" "$destination_path"
+  sync_skill_files "$skill_path" "$destination_path"
   echo "Installed $skill_name"
 }
 
@@ -72,8 +72,22 @@ update_existing_skill() {
   local destination_path="$2"
   local skill_name="$3"
 
-  cp "$skill_path/SKILL.md" "$destination_path/SKILL.md"
-  echo "Updated $skill_name SKILL.md"
+  sync_skill_files "$skill_path" "$destination_path"
+  echo "Updated $skill_name files"
+}
+
+sync_skill_files() {
+  local skill_path="$1"
+  local destination_path="$2"
+
+  mkdir -p "$destination_path"
+  rsync -a --delete \
+    --exclude 'config.toml' \
+    --exclude 'state.jsonl' \
+    --exclude 'last_scan.txt' \
+    --exclude '__pycache__/' \
+    --exclude '*.pyc' \
+    "$skill_path/" "$destination_path/"
 }
 
 template_status() {
@@ -221,7 +235,7 @@ install_optional_skills() {
     fi
 
     if [ -e "$destination_path" ]; then
-      read -r -p "Update optional skill '$skill_name' SKILL.md only? [y/N/q]: " answer
+      read -r -p "Update optional skill '$skill_name' files, preserving local config/state? [y/N/q]: " answer
 
       case "$answer" in
         y|Y|yes|YES)

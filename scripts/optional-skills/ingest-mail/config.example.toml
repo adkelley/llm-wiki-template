@@ -1,0 +1,7 @@
+lookback_days = 14
+raw_output_dir = "raw/"
+accounts = ["personal"]
+folders = ["INBOX"]
+max_messages_per_folder = 25
+max_thread_context_messages = 5
+wiki = "your-wiki-name"

@@ -3,3 +3,6 @@
 .obsidian
 commit.md
 __pycache__
+scripts/optional-skills/ingest-mail/config.toml
+scripts/optional-skills/ingest-mail/state.jsonl
+scripts/optional-skills/ingest-mail/last_scan.txt
