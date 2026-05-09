@@ -12,6 +12,16 @@ from pathlib import Path
 from unittest import mock
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scan_mail.py"
+SKILL_DIR = SCRIPT_PATH.parent
+if str(SKILL_DIR) not in sys.path:
+    sys.path.insert(0, str(SKILL_DIR))
+
+import himalaya_client  # noqa: E402
+import models  # noqa: E402
+import parsers  # noqa: E402
+import raw_export  # noqa: E402
+import thread_context  # noqa: E402
+
 SPEC = importlib.util.spec_from_file_location("scan_mail", SCRIPT_PATH)
 assert SPEC is not None, "Failed to load scan_mail module"
 assert SPEC.loader is not None, "Failed to load scan_mail module"
@@ -30,7 +40,7 @@ class ScanMailTests(unittest.TestCase):
             ]
         )
 
-        self.assertEqual(scan_mail.parse_account_names(output), ["personal", "work"])
+        self.assertEqual(parsers.parse_account_names(output), ["personal", "work"])
 
     def test_parse_folder_names(self) -> None:
         output = json.dumps(
@@ -40,10 +50,10 @@ class ScanMailTests(unittest.TestCase):
             ]
         )
 
-        self.assertEqual(scan_mail.parse_folder_names(output), ["INBOX", "Sent Items"])
+        self.assertEqual(parsers.parse_folder_names(output), ["INBOX", "Sent Items"])
 
     def test_parse_message(self) -> None:
-        message = scan_mail.parse_message(
+        message = parsers.parse_message(
             json.dumps("From: A <a@example.com>\nSubject: Test\n\nBody"),
             account="personal",
             folder="INBOX",
@@ -73,7 +83,7 @@ class ScanMailTests(unittest.TestCase):
             ]
         )
 
-        envelopes = scan_mail.parse_envelopes(
+        envelopes = parsers.parse_envelopes(
             output,
             account="personal",
             folder="INBOX",
@@ -147,22 +157,22 @@ class ScanMailTests(unittest.TestCase):
 
     def test_normalized_thread_subject_removes_reply_and_forward_prefixes(self) -> None:
         self.assertEqual(
-            scan_mail.normalized_thread_subject("Re: Project update"),
+            thread_context.normalized_thread_subject("Re: Project update"),
             "project update",
         )
         self.assertEqual(
-            scan_mail.normalized_thread_subject("Fwd: Re: Project update"),
+            thread_context.normalized_thread_subject("Fwd: Re: Project update"),
             "project update",
         )
         self.assertEqual(
-            scan_mail.normalized_thread_subject(" FW:  FWD: Project update "),
+            thread_context.normalized_thread_subject(" FW:  FWD: Project update "),
             "project update",
         )
 
     def test_normalized_thread_subject_handles_empty_subjects(self) -> None:
-        self.assertEqual(scan_mail.normalized_thread_subject(None), "")
-        self.assertEqual(scan_mail.normalized_thread_subject(""), "")
-        self.assertEqual(scan_mail.normalized_thread_subject("   "), "")
+        self.assertEqual(thread_context.normalized_thread_subject(None), "")
+        self.assertEqual(thread_context.normalized_thread_subject(""), "")
+        self.assertEqual(thread_context.normalized_thread_subject("   "), "")
 
     def test_same_thread_subject_matches_normalized_subjects(self) -> None:
         original = scan_mail.Envelope(
@@ -188,7 +198,7 @@ class ScanMailTests(unittest.TestCase):
             has_attachment=False,
         )
 
-        self.assertTrue(scan_mail.same_thread_subject(original, reply))
+        self.assertTrue(thread_context.same_thread_subject(original, reply))
 
     def test_same_thread_subject_rejects_unrelated_or_empty_subjects(self) -> None:
         first = scan_mail.Envelope(
@@ -225,8 +235,8 @@ class ScanMailTests(unittest.TestCase):
             has_attachment=False,
         )
 
-        self.assertFalse(scan_mail.same_thread_subject(first, unrelated))
-        self.assertFalse(scan_mail.same_thread_subject(empty, empty))
+        self.assertFalse(thread_context.same_thread_subject(first, unrelated))
+        self.assertFalse(thread_context.same_thread_subject(empty, empty))
 
     def test_thread_context_for_envelope_filters_self_unrelated_and_limit(self) -> None:
         target = scan_mail.Envelope(
@@ -342,7 +352,7 @@ class ScanMailTests(unittest.TestCase):
                 scan_mail.load_config(skill_dir)
 
     def test_raw_thread_context_text_returns_none_captured_when_empty(self) -> None:
-        self.assertEqual(scan_mail.raw_thread_context_text([]), "None captured")
+        self.assertEqual(raw_export.raw_thread_context_text([]), "None captured")
 
     def test_raw_thread_context_text_formats_all_context_envelopes(self) -> None:
         first = scan_mail.Envelope(
@@ -351,8 +361,8 @@ class ScanMailTests(unittest.TestCase):
             id="123",
             flags=[],
             subject="Project update",
-            from_addr=scan_mail.Address(name="Sender One", addr="one@example.com"),
-            to_addrs=[scan_mail.Address(name="Recipient", addr="to@example.com")],
+            from_addr=models.Address(name="Sender One", addr="one@example.com"),
+            to_addrs=[models.Address(name="Recipient", addr="to@example.com")],
             date="2026-05-07T20:05:12Z",
             has_attachment=False,
         )
@@ -362,13 +372,13 @@ class ScanMailTests(unittest.TestCase):
             id="456",
             flags=[],
             subject="Re: Project update",
-            from_addr=scan_mail.Address(name="Sender Two", addr="two@example.com"),
+            from_addr=models.Address(name="Sender Two", addr="two@example.com"),
             to_addrs=[],
             date="2026-05-07T21:05:12Z",
             has_attachment=False,
         )
 
-        text = scan_mail.raw_thread_context_text([first, second])
+        text = raw_export.raw_thread_context_text([first, second])
 
         self.assertIn("- Envelope ID: 123", text)
         self.assertIn("  Subject: Project update", text)
@@ -394,12 +404,12 @@ class ScanMailTests(unittest.TestCase):
             id="123",
             flags=[],
             subject="Project update",
-            from_addr=scan_mail.Address(
+            from_addr=models.Address(
                 name="Sender Example",
                 addr="sender@example.com",
             ),
             to_addrs=[
-                scan_mail.Address(
+                models.Address(
                     name="Recipient Example",
                     addr="recipient@example.com",
                 )
@@ -407,13 +417,13 @@ class ScanMailTests(unittest.TestCase):
             date="2026-05-07T20:05:12Z",
             has_attachment=False,
         )
-        message = scan_mail.Message(
+        message = models.Message(
             account="personal",
             folder="INBOX",
             id="123",
             text="From: Sender Example <sender@example.com>\n\nBody text",
         )
-        candidate = scan_mail.Candidate(
+        candidate = models.Candidate(
             envelope=envelope,
             message=message,
             message_error=None,
@@ -421,7 +431,7 @@ class ScanMailTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as tmp:
-            result = scan_mail.write_raw_candidate(config, candidate, Path(tmp))
+            result = raw_export.write_raw_candidate(config, candidate, Path(tmp))
             output_path = Path(result.path)
 
             self.assertTrue(output_path.exists())
@@ -493,7 +503,7 @@ class ScanMailTests(unittest.TestCase):
                 date="2026-05-07T20:05:12Z",
                 has_attachment=False,
             )
-            message = scan_mail.Message(
+            message = models.Message(
                 account="personal",
                 folder="INBOX",
                 id="123",
@@ -589,7 +599,7 @@ class ScanMailTests(unittest.TestCase):
                 id="456",
                 flags=[],
                 subject="Re: Project update",
-                from_addr=scan_mail.Address(
+                from_addr=models.Address(
                     name="Related Sender",
                     addr="related@example.com",
                 ),
@@ -608,7 +618,7 @@ class ScanMailTests(unittest.TestCase):
                 date="2026-05-07T22:05:12Z",
                 has_attachment=False,
             )
-            message = scan_mail.Message(
+            message = models.Message(
                 account="personal",
                 folder="INBOX",
                 id="123",
@@ -697,7 +707,7 @@ class ScanMailTests(unittest.TestCase):
                 date="2026-04-24T20:05:12Z",
                 has_attachment=False,
             )
-            message = scan_mail.Message(
+            message = models.Message(
                 account="personal",
                 folder="INBOX",
                 id="approved-old",
@@ -756,7 +766,7 @@ class ScanMailTests(unittest.TestCase):
         with mock.patch.object(
             scan_mail,
             "export_approved",
-            return_value=[scan_mail.RawWriteResult(path="/tmp/raw/email.md")],
+            return_value=[models.RawWriteResult(path="/tmp/raw/email.md")],
         ) as export_approved:
             with redirect_stdout(output):
                 exit_code = scan_mail.main(
@@ -902,7 +912,7 @@ class ScanMailTests(unittest.TestCase):
                         "Command failed: himalaya message read first\n"
                         "unexpected NO response: Service temporarily unavailable"
                     )
-                return scan_mail.Message(
+                return models.Message(
                     account=account,
                     folder=folder,
                     id=message_id,
@@ -1087,16 +1097,16 @@ class ScanMailTests(unittest.TestCase):
         )
 
     def test_envelope_list_query_without_scan_window_is_empty(self) -> None:
-        self.assertEqual(scan_mail.envelope_list_query(), [])
+        self.assertEqual(himalaya_client.envelope_list_query(), [])
 
     def test_envelope_list_query_with_scan_window_filters_and_sorts(self) -> None:
         with mock.patch.object(
-            scan_mail,
+            himalaya_client,
             "scan_window_after_date",
             return_value="2026-05-05",
         ):
             self.assertEqual(
-                scan_mail.envelope_list_query(3),
+                himalaya_client.envelope_list_query(3),
                 ["after", "2026-05-05", "order", "by", "date", "desc"],
             )
 
@@ -1111,7 +1121,9 @@ class ScanMailTests(unittest.TestCase):
             wiki="example-wiki",
         )
 
-        with mock.patch.object(scan_mail, "run_command", return_value="[]") as run:
+        with mock.patch.object(
+            himalaya_client, "run_command", return_value="[]"
+        ) as run:
             envelopes = scan_mail.himalaya_envelope_list(
                 config,
                 "personal",
@@ -1136,7 +1148,7 @@ class ScanMailTests(unittest.TestCase):
                 "--output",
                 "json",
                 "after",
-                scan_mail.scan_window_after_date(3),
+                himalaya_client.scan_window_after_date(3),
                 "order",
                 "by",
                 "date",

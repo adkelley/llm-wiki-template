@@ -193,5 +193,5 @@ Run tests from the repository root:
 
 ```bash
 python3 -m unittest discover scripts/optional-skills/ingest-mail/tests
-python3 -m py_compile scripts/optional-skills/ingest-mail/scan_mail.py
+python3 -m py_compile scripts/optional-skills/ingest-mail/*.py
 ```

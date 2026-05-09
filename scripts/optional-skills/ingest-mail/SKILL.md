@@ -44,15 +44,20 @@ Required user-managed files:
 - `state.jsonl` - append-only records for evaluated message versions.
 - `last_scan.txt` - UTC ISO-8601 timestamp for the last successful scan.
 
-Required helper script:
+Required helper files:
 
 - `scan_mail.py` - orchestrates Himalaya preflight, scanning, candidate
   extraction, preview-only message reads, state filtering, approved raw-source
   export, and finalize.
+- Sibling Python modules such as `config.py`, `state.py`, `parsers.py`,
+  `himalaya_client.py`, `raw_export.py`, `thread_context.py`, `models.py`, and
+  `errors.py` - support the scanner and must remain installed with
+  `scan_mail.py`.
 
 If `scan_mail.py` is missing, stop and say it needs to be implemented before
-the skill can scan mail. Do not recreate the Python logic inline in the agent
-response.
+the skill can scan mail. If sibling helper modules are missing, stop and ask
+the user to reinstall or update the skill files. Do not recreate the Python
+logic inline in the agent response.
 
 ## Configuration
 
