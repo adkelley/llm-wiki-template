@@ -1,7 +1,7 @@
 # LLM Wiki — Master Schema
 
 ## Domain
-[REPLACE WITH YOUR TOPIC, e.g.: "Machine Learning Research, 2024–2026"]
+["Epiphan Video Company Research, https://www.epiphan.com, May 12, 2026 -"]
 
 ---
 
@@ -71,8 +71,13 @@ source_file: raw/{filename}.md
 author: "Author Name"
 date_published: YYYY-MM-DD
 date_ingested: YYYY-MM-DD
-key_claims: [claim1, claim2, claim3]
-related: [[concept1]], [[concept2]]
+key_claims:
+  - claim1
+  - claim2
+  - claim3
+related:
+  - "[[concept1]]"
+  - "[[concept2]]"
 confidence: high | medium | low
 ---
 
@@ -80,9 +85,15 @@ confidence: high | medium | low
 ---
 type: concept
 title: "Concept Name"
-aliases: [alt-name, abbreviation]
-sources: [[[source1]], [[source2]]]
-related: [[concept2]], [[entity1]]
+aliases:
+  - alt-name
+  - abbreviation
+sources:
+  - "[[source1]]"
+  - "[[source2]]"
+related:
+  - "[[concept2]]"
+  - "[[entity1]]"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 confidence: high | medium | low
@@ -93,8 +104,12 @@ confidence: high | medium | low
 type: entity
 entity_type: person | company | product | org
 title: "Entity Name"
-sources: [[source1]], [[source2]]
-related: [[concept1]], [[entity2]]
+sources:
+  - "[[source1]]"
+  - "[[source2]]"
+related:
+  - "[[concept1]]"
+  - "[[entity2]]"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 ---
@@ -103,7 +118,9 @@ updated: YYYY-MM-DD
 ---
 type: comparison
 title: "Comparing X vs Y"
-sources: [[source1]], [[source2]]
+sources:
+  - "[[source1]]"
+  - "[[source2]]"
 filed_from_query: true
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
@@ -113,7 +130,9 @@ updated: YYYY-MM-DD
 ---
 type: synthesis
 title: "Synthesis Title"
-sources: [[source1]], [[source2]]
+sources:
+  - "[[source1]]"
+  - "[[source2]]"
 filed_from_query: true
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
