@@ -37,7 +37,7 @@ python3 otter_transcript.py \
   --raw-output-dir raw
 ```
 
-Find a conversation by title, date, and participant email:
+Find and capture a conversation by title, date, and participant email:
 
 ```bash
 python3 otter_transcript.py \
@@ -45,6 +45,15 @@ python3 otter_transcript.py \
   --date 2026-05-14 \
   --email-address nick@example.com \
   --raw-output-dir raw
+```
+
+List matching conversations without writing a raw file:
+
+```bash
+python3 otter_transcript.py \
+  --list \
+  --title "Nick Divehall" \
+  --limit 5
 ```
 
 Use the repo-root virtual environment when working in this template repository:
@@ -69,9 +78,14 @@ endpoint and filters the first page locally:
 - `--date` matches the beginning of `created_at`, normally `YYYY-MM-DD`.
 - `--email-address` matches owner, calendar guest, and shared email fields.
 
-If no conversations match, the helper stops. If multiple conversations match,
-it prints the matching `created_at`, title, and conversation ID values so the
-user can rerun with `--conversation-id`.
+Use `--list` to inspect matches without fetching transcript content or writing
+raw Markdown. Use `--limit N` to limit how many matching conversations are
+printed. `--limit` is applied after filtering; it does not make a broad search
+safe to capture automatically.
+
+If no conversations match, the helper stops. If multiple conversations match in
+capture mode, it prints a table of candidates and stops so the user can rerun
+with `--conversation-id`.
 
 ## Raw Output
 
@@ -111,6 +125,8 @@ be edited after capture.
 ## Current Limitations
 
 - The conversations list scan reads only the first API page.
+- `--limit` limits printed matches only; it does not page through older Otter
+  conversations.
 - Batch capture is not implemented.
 - Local Otter export parsing is not implemented.
 - The helper captures transcript text only; it does not download audio or

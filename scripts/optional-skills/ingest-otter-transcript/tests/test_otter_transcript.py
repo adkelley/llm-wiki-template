@@ -61,6 +61,21 @@ class OtterTranscriptTest(unittest.TestCase):
             ],
         }
 
+    def sample_other_list_conversation(self) -> dict:
+        return {
+            "id": "def456",
+            "title": "Nick Follow Up",
+            "url": "https://otter.ai/u/def456",
+            "created_at": "2026-05-13T17:54:08Z",
+            "owner": {
+                "email": "alex@example.com",
+            },
+            "calendar_guests": [
+                {"email": "nick@example.com"},
+            ],
+            "shared_emails": [],
+        }
+
     def sample_full_conversation(self) -> dict:
         conversation = self.sample_list_conversation()
         conversation["relationships"] = {
@@ -215,6 +230,83 @@ class OtterTranscriptTest(unittest.TestCase):
                 "Nick Divehall  00:00\nHello from Otter.\n",
                 output_files[0].read_text(encoding="utf-8"),
             )
+
+    def test_main_list_mode_prints_limited_matches_without_fetching(self):
+        conversations = [
+            self.sample_list_conversation(),
+            self.sample_other_list_conversation(),
+        ]
+
+        with mock.patch.dict(
+            otter_transcript.os.environ,
+            {"OTTER_API_KEY": "test-key"},
+            clear=True,
+        ), mock.patch.object(
+            otter_transcript,
+            "list_conversations",
+            return_value=conversations,
+        ), mock.patch.object(
+            otter_transcript,
+            "fetch_conversation",
+        ) as fetch_conversation:
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = otter_transcript.main(
+                    [
+                        "--list",
+                        "--title",
+                        "Nick",
+                        "--limit",
+                        "1",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("Found 2 matching conversation(s); showing 1", output)
+        self.assertIn("Nick Divehall & Turtles", output)
+        self.assertNotIn("Nick Follow Up", output)
+        fetch_conversation.assert_not_called()
+
+    def test_main_multiple_matches_prints_limited_candidates(self):
+        conversations = [
+            self.sample_list_conversation(),
+            self.sample_other_list_conversation(),
+        ]
+
+        with mock.patch.dict(
+            otter_transcript.os.environ,
+            {"OTTER_API_KEY": "test-key"},
+            clear=True,
+        ), mock.patch.object(
+            otter_transcript,
+            "list_conversations",
+            return_value=conversations,
+        ), mock.patch.object(
+            otter_transcript,
+            "fetch_conversation",
+        ) as fetch_conversation:
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = otter_transcript.main(
+                    [
+                        "--title",
+                        "Nick",
+                        "--limit",
+                        "1",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        output = stdout.getvalue()
+        self.assertIn("Multiple matching conversations found: 2; showing 1", output)
+        self.assertIn("Nick Divehall & Turtles", output)
+        self.assertNotIn("Nick Follow Up", output)
+        self.assertIn(
+            "otter_transcript: narrow the search or rerun with --conversation-id",
+            output,
+        )
+        fetch_conversation.assert_not_called()
 
 
 if __name__ == "__main__":

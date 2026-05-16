@@ -103,6 +103,27 @@ def http_error_message(error: urllib.error.HTTPError) -> str:
     return message
 
 
+def print_conversation_table(conversations: list[dict[str, Any]]) -> None:
+    date_width = 10
+    title_width = 50
+
+    print(f"{'Date':<{date_width}} {'Title':<{title_width}} Conversation ID")
+    print(
+        f"{'-' * date_width:<{date_width}} {'-' * title_width:<{title_width}} {'-' * 24}"
+    )
+
+    for conversation in conversations:
+        created_at = str(conversation.get("created_at") or "unknown")
+        date = created_at[:10] if created_at != "unknown" else "unknown"
+        title = str(conversation.get("title") or "Untitled")
+        conversation_id = str(conversation.get("id") or "unknown-id")
+
+        if len(title) > title_width:
+            title = title[: title_width - 3] + "..."
+
+        print(f"{date:<{date_width}} {title:<{title_width}} {conversation_id}")
+
+
 def list_conversations(api_key: str) -> list[dict[str, Any]]:
     request = urllib.request.Request(
         "https://api.otter.ai/v1/conversations",
@@ -264,7 +285,20 @@ def main(argv: list[str] | None = None) -> int:
         default=Path("raw"),
         help="Directory for generated raw Markdown output",
     )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List matching conversations without fetching or writing raw Markdown",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Maximum number of matching conversations to print",
+    )
     args = parser.parse_args(argv)
+    if args.limit < 1:
+        parser.error("--limit must be at least 1")
 
     if not any(
         [
@@ -292,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         conversations = list_conversations(api_key)
+
         matches = [
             conversation
             for conversation in conversations
@@ -299,20 +334,29 @@ def main(argv: list[str] | None = None) -> int:
             and date_matches(conversation, args.date)
             and email_matches(conversation, args.email_address)
         ]
-        print("match count: ", len(matches))
+
+        limited_matches = matches[: args.limit]
+
+        if args.list:
+            if not matches:
+                raise OtterTranscriptError("no matching conversations found")
+
+            print(
+                f"Found {len(matches)} matching conversation(s); "
+                f"showing {len(limited_matches)}"
+            )
+            print_conversation_table(limited_matches)
+            return 0
 
         if not matches:
-            print("No matching conversations found")
             raise OtterTranscriptError("no matching conversations found")
 
         if len(matches) > 1:
-            print(f"Multiple matching conversations found: {len(matches)}")
-            for conversation in matches:
-                print(
-                    conversation["created_at"],
-                    conversation["title"],
-                    conversation["id"],
-                )
+            print(
+                f"Multiple matching conversations found: {len(matches)}; "
+                f"showing {len(limited_matches)}"
+            )
+            print_conversation_table(limited_matches)
             raise OtterTranscriptError(
                 "narrow the search or rerun with --conversation-id"
             )

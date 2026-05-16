@@ -5,10 +5,10 @@ description: |
   types "/ingest-otter-transcript", says "ingest Otter transcript",
   "process this Otter export", "import this Otter meeting", or asks to turn an
   Otter.ai conversation into raw wiki source material. Uses the Otter Public
-  API helper script with `OTTER_API_KEY` to fetch one conversation transcript
-  by ID or by title/date/email matching. Preserves the transcript as immutable
-  raw source material, then runs the standard wiki ingest workflow only when
-  the user explicitly asks to ingest it.
+  API helper script with `OTTER_API_KEY` to list matching conversations or
+  fetch one conversation transcript by ID or by title/date/email matching.
+  Preserves the transcript as immutable raw source material, then runs the
+  standard wiki ingest workflow only when the user explicitly asks to ingest it.
 ---
 
 # /ingest-otter-transcript - Otter Transcript Ingest
@@ -21,10 +21,11 @@ This skill uses the Otter Public API, not web scraping or browser automation.
 The safe v1 path is:
 
 1. Confirm the user has `OTTER_API_KEY` set.
-2. Identify a single Otter conversation by ID or by title/date/email matching.
-3. Fetch the conversation with transcript content included.
-4. Preserve the transcript text verbatim in `raw/`.
-5. Run the normal wiki ingest workflow only if the user asks to continue.
+2. Identify candidate conversations with `--list` when the user is unsure.
+3. Identify a single Otter conversation by ID or by title/date/email matching.
+4. Fetch the conversation with transcript content included.
+5. Preserve the transcript text verbatim in `raw/`.
+6. Run the normal wiki ingest workflow only if the user asks to continue.
 
 ## Requirements
 
@@ -61,14 +62,27 @@ Then run:
 
 ```bash
 python3 scripts/optional-skills/ingest-otter-transcript/otter_transcript.py \
+  --list \
   --title "{TITLE_TEXT}" \
   --date "{YYYY-MM-DD}" \
-  --email-address "{EMAIL_ADDRESS}"
+  --email-address "{EMAIL_ADDRESS}" \
+  --limit 10
 ```
 
 The helper scans the first page of `GET /v1/conversations` and filters locally.
-If multiple conversations match, report the printed candidates and ask the user
-which conversation ID to capture.
+`--list` prints matching conversations without fetching transcript content or
+writing raw files. `--limit` controls how many matching conversations are
+printed after filtering; it does not page through older Otter conversations.
+
+If the user identifies the desired row, rerun with its conversation ID:
+
+```bash
+python3 scripts/optional-skills/ingest-otter-transcript/otter_transcript.py \
+  --conversation-id "{CONVERSATION_ID}"
+```
+
+If the user skips `--list` and multiple conversations match, report the printed
+candidates and ask the user which conversation ID to capture.
 
 ## Step 2 - Read Wiki Topic
 
@@ -97,6 +111,10 @@ Run the helper from the wiki root. In the template repository, use:
   --email-address "{EMAIL_ADDRESS}" \
   --raw-output-dir raw
 ```
+
+Any one of `--title`, `--date`, or `--email-address` may be enough if it
+matches exactly one conversation. Use more filters when the first search returns
+multiple candidates.
 
 In an installed wiki, use the Python interpreter appropriate for that wiki.
 
