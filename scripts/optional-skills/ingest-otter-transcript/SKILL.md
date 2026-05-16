@@ -56,6 +56,8 @@ details:
 
 - title text
 - conversation date as `YYYY-MM-DD`
+- relative date range such as `today`, `yesterday`, `last week`, or
+  `last month`
 - participant email address
 
 Then run:
@@ -69,10 +71,21 @@ python3 scripts/optional-skills/ingest-otter-transcript/otter_transcript.py \
   --limit 10
 ```
 
+For relative date matching, use `--when` instead of `--date`:
+
+```bash
+python3 scripts/optional-skills/ingest-otter-transcript/otter_transcript.py \
+  --list \
+  --when "yesterday" \
+  --limit 10
+```
+
 The helper scans the first page of `GET /v1/conversations` and filters locally.
 `--list` prints matching conversations without fetching transcript content or
 writing raw files. `--limit` controls how many matching conversations are
 printed after filtering; it does not page through older Otter conversations.
+`--date` and `--when` are mutually exclusive. Relative `--when` ranges compare
+against the UTC date prefix in Otter's `created_at` timestamp.
 
 If the user identifies the desired row, rerun with its conversation ID:
 
@@ -112,9 +125,9 @@ Run the helper from the wiki root. In the template repository, use:
   --raw-output-dir raw
 ```
 
-Any one of `--title`, `--date`, or `--email-address` may be enough if it
-matches exactly one conversation. Use more filters when the first search returns
-multiple candidates.
+Any one of `--title`, `--date`, `--when`, or `--email-address` may be enough if
+it matches exactly one conversation. Use more filters when the first search
+returns multiple candidates.
 
 In an installed wiki, use the Python interpreter appropriate for that wiki.
 
@@ -203,6 +216,8 @@ Do not silently ingest into `wiki/` immediately after raw capture.
 - **Missing `OTTER_API_KEY`:** ask the user to set the environment variable.
 - **No locator provided:** ask for conversation ID, title, date, or participant
   email.
+- **Unsupported `--when`:** use only `today`, `yesterday`, `last week`, or
+  `last month`.
 - **No matching conversation:** report that no matching conversations were
   found.
 - **Multiple matches:** report the candidate list and ask the user which

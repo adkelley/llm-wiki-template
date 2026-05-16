@@ -4,7 +4,7 @@ import os
 import re
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +16,38 @@ class OtterTranscriptError(Exception):
 def utc_now_iso() -> str:
     timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
     return timestamp.replace("+00:00", "Z")
+
+
+def parse_iso_date(value: str) -> date:
+    return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+def date_range_from_when(value: str, today: date | None = None) -> tuple[date, date]:
+    current = today or date.today()
+    normalized = value.strip().lower()
+
+    if normalized == "today":
+        return current, current
+
+    if normalized == "yesterday":
+        yesterday = current - timedelta(days=1)
+        return yesterday, yesterday
+
+    if normalized == "last week":
+        start_this_week = current - timedelta(days=current.weekday())
+        start_last_week = start_this_week - timedelta(days=7)
+        end_last_week = start_this_week - timedelta(days=1)
+        return start_last_week, end_last_week
+
+    if normalized == "last month":
+        first_this_month = current.replace(day=1)
+        end_last_month = first_this_month - timedelta(days=1)
+        start_last_month = end_last_month.replace(day=1)
+        return start_last_month, end_last_month
+
+    raise OtterTranscriptError(
+        'unsupported --when value; use "today", "yesterday", "last week", or "last month"'
+    )
 
 
 def slugify(value: str, fallback: str = "otter-transcript") -> str:
@@ -40,6 +72,34 @@ def date_matches(conversation: dict[str, Any], date_query: str) -> bool:
 
     created_at = str(conversation.get("created_at") or "")
     return created_at.startswith(date_query)
+
+
+def created_date(conversation: dict[str, Any]) -> date | None:
+    created_at = str(conversation.get("created_at") or "")
+    try:
+        return parse_iso_date(created_at[:10])
+    except ValueError:
+        return None
+
+
+def date_filter_matches(
+    conversation: dict[str, Any],
+    exact_date: str | None,
+    date_range: tuple[date, date] | None,
+) -> bool:
+    if not exact_date and not date_range:
+        return True
+
+    created = created_date(conversation)
+    if created is None:
+        return False
+
+    if exact_date:
+        return created == parse_iso_date(exact_date)
+
+    assert date_range is not None
+    start, end = date_range
+    return start <= created <= end
 
 
 def conversation_emails(conversation: dict[str, Any]) -> set[str]:
@@ -269,10 +329,16 @@ def main(argv: list[str] | None = None) -> int:
         type=str,
         help="Case-insensitive text to match in the conversation title",
     )
-    parser.add_argument(
+    date_group = parser.add_mutually_exclusive_group()
+    date_group.add_argument(
         "--date",
         type=str,
         help="Conversation date to match, YYYY-MM-DD",
+    )
+    date_group.add_argument(
+        "--when",
+        type=str,
+        help='Relative date range: "today", "yesterday", "last week", or "last month"',
     )
     parser.add_argument(
         "--email-address",
@@ -305,17 +371,20 @@ def main(argv: list[str] | None = None) -> int:
             args.conversation_id,
             args.title,
             args.date,
+            args.when,
             args.email_address,
         ]
     ):
         parser.error(
-            "provide at least one of --conversation-id, --title, --date, or --email-address"
+            "provide at least one of --conversation-id, --title, --date, --when, or --email-address"
         )
 
     try:
         api_key = os.environ.get("OTTER_API_KEY")
         if not api_key:
             raise OtterTranscriptError("OTTER_API_KEY environment variable not set")
+
+        date_range = date_range_from_when(args.when) if args.when else None
 
         if args.conversation_id:
             full_conversation = fetch_conversation(api_key, args.conversation_id)
@@ -331,7 +400,7 @@ def main(argv: list[str] | None = None) -> int:
             conversation
             for conversation in conversations
             if title_matches(conversation, args.title)
-            and date_matches(conversation, args.date)
+            and date_filter_matches(conversation, args.date, date_range)
             and email_matches(conversation, args.email_address)
         ]
 

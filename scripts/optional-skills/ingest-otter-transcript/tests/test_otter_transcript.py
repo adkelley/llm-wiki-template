@@ -6,7 +6,8 @@ import json
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
+from datetime import date
 from pathlib import Path
 from unittest import mock
 
@@ -102,6 +103,117 @@ class OtterTranscriptTest(unittest.TestCase):
         self.assertEqual(otter_transcript.date_from_created_at(None), "undated")
         self.assertEqual(otter_transcript.date_from_created_at("not-a-date"), "undated")
 
+    def test_date_range_from_when_supports_yesterday(self):
+        self.assertEqual(
+            otter_transcript.date_range_from_when(
+                "yesterday",
+                today=date(2026, 5, 16),
+            ),
+            (date(2026, 5, 15), date(2026, 5, 15)),
+        )
+
+    def test_date_range_from_when_supports_last_week(self):
+        self.assertEqual(
+            otter_transcript.date_range_from_when(
+                "last week",
+                today=date(2026, 5, 16),
+            ),
+            (date(2026, 5, 4), date(2026, 5, 10)),
+        )
+
+    def test_date_filter_matches_range(self):
+        conversation = self.sample_list_conversation()  # 2026-05-14
+
+        self.assertTrue(
+            otter_transcript.date_filter_matches(
+                conversation,
+                exact_date=None,
+                date_range=(date(2026, 5, 14), date(2026, 5, 15)),
+            )
+        )
+        self.assertFalse(
+            otter_transcript.date_filter_matches(
+                conversation,
+                exact_date=None,
+                date_range=(date(2026, 5, 1), date(2026, 5, 10)),
+            )
+        )
+
+    def test_main_list_mode_filters_by_when_yesterday(self):
+        yesterday_conversation = self.sample_list_conversation()
+        yesterday_conversation["created_at"] = "2026-05-15T10:00:00Z"
+
+        older_conversation = self.sample_other_list_conversation()
+        older_conversation["created_at"] = "2026-05-13T10:00:00Z"
+
+        with (
+            mock.patch.dict(
+                otter_transcript.os.environ,
+                {"OTTER_API_KEY": "test-key"},
+                clear=True,
+            ),
+            mock.patch.object(
+                otter_transcript,
+                "list_conversations",
+                return_value=[yesterday_conversation, older_conversation],
+            ),
+            mock.patch.object(
+                otter_transcript,
+                "date_range_from_when",
+                return_value=(date(2026, 5, 15), date(2026, 5, 15)),
+            ),
+            mock.patch.object(
+                otter_transcript,
+                "fetch_conversation",
+            ) as fetch_conversation,
+        ):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = otter_transcript.main(
+                    [
+                        "--list",
+                        "--when",
+                        "yesterday",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("Found 1 matching conversation(s); showing 1", output)
+        self.assertIn("Nick Divehall & Turtles", output)
+        self.assertNotIn("Nick Follow Up", output)
+        fetch_conversation.assert_not_called()
+
+    def test_main_rejects_date_and_when_together(self):
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            with self.assertRaises(SystemExit) as error:
+                otter_transcript.main(
+                    [
+                        "--date",
+                        "2026-05-14",
+                        "--when",
+                        "yesterday",
+                    ]
+                )
+
+        self.assertEqual(error.exception.code, 2)
+
+    def test_main_rejects_unsupported_when_value(self):
+        with mock.patch.dict(
+            otter_transcript.os.environ,
+            {"OTTER_API_KEY": "test-key"},
+            clear=True,
+        ):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = otter_transcript.main(
+                    ["--list", "--when", "two fridays ago"]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("unsupported --when value", stdout.getvalue())
+
     def test_filters_match_title_date_and_email(self):
         conversation = self.sample_list_conversation()
 
@@ -133,8 +245,7 @@ class OtterTranscriptTest(unittest.TestCase):
         )
         self.assertEqual(
             path,
-            Path("raw")
-            / "2026-05-14-otter-nick-divehall-turtles-abc123.md",
+            Path("raw") / "2026-05-14-otter-nick-divehall-turtles-abc123.md",
         )
 
     def test_transcript_from_conversation_rejects_missing_content(self):
@@ -156,7 +267,9 @@ class OtterTranscriptTest(unittest.TestCase):
             "Participant emails: alex@example.com, nick@example.com, shared@example.com\n",
             markdown,
         )
-        self.assertTrue(markdown.endswith("Nick Divehall  00:00\nHello from Otter.\n\n"))
+        self.assertTrue(
+            markdown.endswith("Nick Divehall  00:00\nHello from Otter.\n\n")
+        )
 
     def test_write_raw_markdown_refuses_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -202,14 +315,17 @@ class OtterTranscriptTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "raw"
 
-            with mock.patch.dict(
-                otter_transcript.os.environ,
-                {"OTTER_API_KEY": "test-key"},
-                clear=True,
-            ), mock.patch.object(
-                otter_transcript,
-                "fetch_conversation",
-                return_value=self.sample_full_conversation(),
+            with (
+                mock.patch.dict(
+                    otter_transcript.os.environ,
+                    {"OTTER_API_KEY": "test-key"},
+                    clear=True,
+                ),
+                mock.patch.object(
+                    otter_transcript,
+                    "fetch_conversation",
+                    return_value=self.sample_full_conversation(),
+                ),
             ):
                 stdout = io.StringIO()
                 with redirect_stdout(stdout):
@@ -237,18 +353,22 @@ class OtterTranscriptTest(unittest.TestCase):
             self.sample_other_list_conversation(),
         ]
 
-        with mock.patch.dict(
-            otter_transcript.os.environ,
-            {"OTTER_API_KEY": "test-key"},
-            clear=True,
-        ), mock.patch.object(
-            otter_transcript,
-            "list_conversations",
-            return_value=conversations,
-        ), mock.patch.object(
-            otter_transcript,
-            "fetch_conversation",
-        ) as fetch_conversation:
+        with (
+            mock.patch.dict(
+                otter_transcript.os.environ,
+                {"OTTER_API_KEY": "test-key"},
+                clear=True,
+            ),
+            mock.patch.object(
+                otter_transcript,
+                "list_conversations",
+                return_value=conversations,
+            ),
+            mock.patch.object(
+                otter_transcript,
+                "fetch_conversation",
+            ) as fetch_conversation,
+        ):
             stdout = io.StringIO()
             with redirect_stdout(stdout):
                 exit_code = otter_transcript.main(
@@ -274,18 +394,22 @@ class OtterTranscriptTest(unittest.TestCase):
             self.sample_other_list_conversation(),
         ]
 
-        with mock.patch.dict(
-            otter_transcript.os.environ,
-            {"OTTER_API_KEY": "test-key"},
-            clear=True,
-        ), mock.patch.object(
-            otter_transcript,
-            "list_conversations",
-            return_value=conversations,
-        ), mock.patch.object(
-            otter_transcript,
-            "fetch_conversation",
-        ) as fetch_conversation:
+        with (
+            mock.patch.dict(
+                otter_transcript.os.environ,
+                {"OTTER_API_KEY": "test-key"},
+                clear=True,
+            ),
+            mock.patch.object(
+                otter_transcript,
+                "list_conversations",
+                return_value=conversations,
+            ),
+            mock.patch.object(
+                otter_transcript,
+                "fetch_conversation",
+            ) as fetch_conversation,
+        ):
             stdout = io.StringIO()
             with redirect_stdout(stdout):
                 exit_code = otter_transcript.main(

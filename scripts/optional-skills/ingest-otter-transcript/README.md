@@ -47,6 +47,15 @@ python3 otter_transcript.py \
   --raw-output-dir raw
 ```
 
+Find conversations using a relative date range:
+
+```bash
+python3 otter_transcript.py \
+  --list \
+  --when "yesterday" \
+  --limit 5
+```
+
 List matching conversations without writing a raw file:
 
 ```bash
@@ -76,7 +85,12 @@ endpoint and filters the first page locally:
 
 - `--title` matches case-insensitive title text.
 - `--date` matches the beginning of `created_at`, normally `YYYY-MM-DD`.
+- `--when` accepts `today`, `yesterday`, `last week`, or `last month`.
 - `--email-address` matches owner, calendar guest, and shared email fields.
+
+`--date` and `--when` are mutually exclusive. `--date` is for exact calendar
+date matching. `--when` expands to a date range before filtering. Relative
+ranges compare against the UTC date prefix in Otter's `created_at` timestamp.
 
 Use `--list` to inspect matches without fetching transcript content or writing
 raw Markdown. Use `--limit N` to limit how many matching conversations are
@@ -127,6 +141,8 @@ be edited after capture.
 - The conversations list scan reads only the first API page.
 - `--limit` limits printed matches only; it does not page through older Otter
   conversations.
+- Relative `--when` matching compares against the UTC date prefix returned by
+  Otter, not a localized meeting timezone.
 - Batch capture is not implemented.
 - Local Otter export parsing is not implemented.
 - The helper captures transcript text only; it does not download audio or
