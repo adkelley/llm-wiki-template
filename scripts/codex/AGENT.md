@@ -1,7 +1,7 @@
 # LLM Wiki — Master Schema
 
 ## Domain
-["Epiphan Video Company Research, https://www.epiphan.com, May 12, 2026 -"]
+[Enter your wiki subject here example - "AI LLM Research, May 2026 -"]
 
 ---
 
