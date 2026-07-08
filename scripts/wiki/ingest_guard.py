@@ -19,6 +19,7 @@ import argparse
 import fnmatch
 import hashlib
 import json
+import os
 import re
 import unicodedata
 from collections.abc import Iterator
@@ -65,10 +66,34 @@ def should_ignore_raw_file(path: Path) -> bool:
 
 
 def iter_files(root: Path) -> Iterator[Path]:
+    """Walk root and yield every file, following symlinked directories.
+
+    Uses os.walk(followlinks=True) rather than Path.rglob(), since Python
+    3.13 changed rglob's recursive "**" matching to skip symlinked
+    directories by default. raw/ commonly holds symlinks to sibling folders
+    (for example raw/Research -> ../../Research), so those directories must
+    still be traversed. A visited-realpath set guards against symlink
+    cycles, which followlinks=True does not protect against on its own.
+    """
+
     if not root.exists():
         return
 
-    for path in sorted(root.rglob("*")):
+    paths = []
+    visited_dirs = {os.path.realpath(root)}
+
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=True):
+        dirnames[:] = [
+            name
+            for name in dirnames
+            if os.path.realpath(os.path.join(dirpath, name)) not in visited_dirs
+        ]
+        for name in dirnames:
+            visited_dirs.add(os.path.realpath(os.path.join(dirpath, name)))
+
+        paths.extend(Path(dirpath) / filename for filename in filenames)
+
+    for path in sorted(paths):
         if path.is_file() and not should_ignore_raw_file(path):
             yield path
 
@@ -90,7 +115,20 @@ def read_ignore_patterns(path: Path) -> list[str]:
 
 
 def relative_to_raw(path: Path, raw_dir: Path) -> str:
-    return path.resolve().relative_to(raw_dir.resolve()).as_posix()
+    """Compute path's location relative to raw_dir without resolving symlinks.
+
+    raw/ may contain symlinked directories pointing outside the wiki tree
+    (for example raw/Research -> ../../Research). Path.resolve() follows
+    those symlinks, which can walk the result out from under raw_dir
+    entirely and break relative_to(). os.path.relpath works lexically on
+    the path strings instead, so a file's logical location under raw/ is
+    preserved regardless of what a symlinked ancestor directory points to.
+    """
+
+    rel = os.path.relpath(path, raw_dir)
+    if rel == os.pardir or rel.startswith(os.pardir + os.sep):
+        raise ValueError(f"{path} is not in the subpath of {raw_dir}")
+    return Path(rel).as_posix()
 
 
 def try_relative_to_raw(path: Path, raw_dir: Path) -> str | None:

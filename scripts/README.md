@@ -75,6 +75,18 @@ Financials/Archive/
 drafts/scratch-*.md
 ```
 
+#### Symlinked Folders Under `raw/`
+
+`raw/` entries may be symlinks to folders that live outside the wiki tree
+(for example `raw/Research -> ../../Research`), such as when a user keeps
+source material in its original location and links it into `raw/` instead of
+copying it in. `audit` and `index-existing` traverse into symlinked
+directories and hash the files inside them the same as regular folders, and
+path-ignore patterns match against the file's logical path under `raw/`
+regardless of where a symlinked ancestor folder physically points. Traversal
+guards against symlink cycles, so a loop won't cause `audit` or
+`index-existing` to hang.
+
 The current workflow is:
 
 1. compute a SHA-256 hash of the source file bytes
