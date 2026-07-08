@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
-"""Guard LLM Wiki raw ingests against duplicate source files.
+"""Guard LLM Wiki raw ingests against duplicate or unwanted source files.
 
 The manifest is JSON Lines at `.llm-wiki/ingest-manifest.jsonl`: one JSON
-object per successful ingest record. The guard starts with deterministic hashes:
-a byte SHA-256 for every file, plus a normalized text SHA-256 for plain-text
-files.
+object per ingest decision. The guard starts with deterministic hashes: a
+byte SHA-256 for every file, plus a normalized text SHA-256 for plain-text
+files. Each record carries a `decision` of "ingest" or "skip"; when a file's
+hash matches more than one record, the most recently appended record wins,
+so a user can change their mind later and the newer decision governs.
+
+Path-based exclusions live separately in `.llm-wiki/raw-ignore.txt`: one
+fnmatch-style glob pattern per line, matched against each file's path
+relative to `raw/`. Ignored paths are excluded before hashing, so an entire
+folder (such as a financial statements archive) can be excluded without
+scanning or recording every file inside it individually.
 """
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import re
@@ -18,6 +27,7 @@ from pathlib import Path
 
 CHUNK_SIZE = 1024 * 1024
 MANIFEST_PATH = Path(".llm-wiki") / "ingest-manifest.jsonl"
+IGNORE_PATH = Path(".llm-wiki") / "raw-ignore.txt"
 RAW_DIR = Path("raw")
 IGNORED_RAW_FILES = {".gitkeep", ".DS_Store"}
 PLAIN_TEXT_SUFFIXES = {".txt", ".md", ".csv", ".json", ".jsonl", ".html", ".htm"}
@@ -63,27 +73,70 @@ def iter_files(root: Path) -> Iterator[Path]:
             yield path
 
 
+def read_ignore_patterns(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+
+    patterns = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.endswith("/"):
+            line = line + "*"
+        patterns.append(line)
+
+    return patterns
+
+
+def relative_to_raw(path: Path, raw_dir: Path) -> str:
+    return path.resolve().relative_to(raw_dir.resolve()).as_posix()
+
+
+def try_relative_to_raw(path: Path, raw_dir: Path) -> str | None:
+    try:
+        return relative_to_raw(path, raw_dir)
+    except ValueError:
+        return None
+
+
+def matches_ignore_patterns(rel_path: str, patterns: list[str]) -> str | None:
+    for pattern in patterns:
+        if fnmatch.fnmatch(rel_path, pattern):
+            return pattern
+
+    return None
+
+
 def audit_command(args: argparse.Namespace) -> int:
     records = read_jsonl(args.manifest)
+    ignore_patterns = read_ignore_patterns(args.ignore_file)
+
     known_count = 0
     new_count = 0
+    skipped_count = 0
+    ignored_count = 0
     files = []
 
     for path in iter_files(args.raw_dir):
+        rel_path = relative_to_raw(path, args.raw_dir)
+        matched_pattern = matches_ignore_patterns(rel_path, ignore_patterns)
+
+        if matched_pattern is not None:
+            ignored_count += 1
+            files.append(
+                {
+                    "status": "ignored_by_path",
+                    "source_path": display_path(path),
+                    "matched_pattern": matched_pattern,
+                }
+            )
+            continue
+
         candidate = build_file_record(path)
         duplicate = find_duplicate(records, candidate)
 
-        if duplicate is not None:
-            kind, match = duplicate
-            status = "known"
-            known_count += 1
-        else:
-            kind = None
-            status = "new"
-            new_count += 1
-
         file_result = {
-            "status": status,
             "source_path": candidate["source_path"],
             "byte_sha256": candidate["byte_sha256"],
             "size_bytes": candidate["size_bytes"],
@@ -92,9 +145,25 @@ def audit_command(args: argparse.Namespace) -> int:
         if "text_sha256" in candidate:
             file_result["text_sha256"] = candidate["text_sha256"]
 
-        if kind is not None:
+        if duplicate is not None:
+            kind, match = duplicate
+            decision = match.get("decision", "ingest")
             file_result["duplicate_kind"] = kind
 
+            if decision == "skip":
+                status = "skipped"
+                skipped_count += 1
+                if "reason" in match:
+                    file_result["reason"] = match["reason"]
+                file_result["skipped_at"] = match.get("skipped_at")
+            else:
+                status = "known"
+                known_count += 1
+        else:
+            status = "new"
+            new_count += 1
+
+        file_result["status"] = status
         files.append(file_result)
 
     print_json(
@@ -102,7 +171,9 @@ def audit_command(args: argparse.Namespace) -> int:
             "raw_dir": args.raw_dir.as_posix(),
             "known_count": known_count,
             "new_count": new_count,
-            "file_count": known_count + new_count,
+            "skipped_count": skipped_count,
+            "ignored_count": ignored_count,
+            "file_count": known_count + new_count + skipped_count + ignored_count,
             "files": files,
         }
     )
@@ -111,10 +182,24 @@ def audit_command(args: argparse.Namespace) -> int:
 
 def index_existing_command(args: argparse.Namespace) -> int:
     records = read_jsonl(args.manifest)
+    ignore_patterns = read_ignore_patterns(args.ignore_file)
     written = []
     skipped = []
+    ignored = []
 
     for path in iter_files(args.raw_dir):
+        rel_path = relative_to_raw(path, args.raw_dir)
+        matched_pattern = matches_ignore_patterns(rel_path, ignore_patterns)
+
+        if matched_pattern is not None:
+            ignored.append(
+                {
+                    "source_path": display_path(path),
+                    "matched_pattern": matched_pattern,
+                }
+            )
+            continue
+
         candidate = build_file_record(path)
         duplicate = find_duplicate(records, candidate)
 
@@ -129,6 +214,7 @@ def index_existing_command(args: argparse.Namespace) -> int:
             )
             continue
 
+        candidate["decision"] = "ingest"
         candidate["ingested_at"] = utc_now_iso()
         append_jsonl(args.manifest, candidate)
 
@@ -141,8 +227,10 @@ def index_existing_command(args: argparse.Namespace) -> int:
             "raw_dir": args.raw_dir.as_posix(),
             "written_count": len(written),
             "skipped_count": len(skipped),
+            "ignored_count": len(ignored),
             "written": written,
             "skipped": skipped,
+            "ignored": ignored,
         }
     )
 
@@ -229,7 +317,7 @@ def hash_command(args: argparse.Namespace) -> int:
 
 
 def find_matching_byte_hash(records: list[dict], byte_sha256: str) -> dict | None:
-    for record in records:
+    for record in reversed(records):
         if record.get("byte_sha256") == byte_sha256:
             return record
 
@@ -237,7 +325,7 @@ def find_matching_byte_hash(records: list[dict], byte_sha256: str) -> dict | Non
 
 
 def find_matching_text_hash(records: list[dict], text_sha256: str) -> dict | None:
-    for record in records:
+    for record in reversed(records):
         if record.get("text_sha256") == text_sha256:
             return record
 
@@ -254,6 +342,12 @@ def duplicate_result(kind: str, match: dict, candidate: dict) -> dict:
 
 
 def find_duplicate(records: list[dict], candidate: dict) -> tuple[str, dict] | None:
+    """Return the most recently recorded decision matching this candidate.
+
+    Records are matched newest-first so that a later decision (for example,
+    ingesting a file that was previously marked skip, or vice versa)
+    overrides an earlier one for the same content hash.
+    """
 
     match = find_matching_byte_hash(records, candidate["byte_sha256"])
 
@@ -276,9 +370,16 @@ def record_command(args: argparse.Namespace) -> int:
     duplicate = find_duplicate(records, candidate)
     if duplicate is not None:
         kind, match = duplicate
-        print_json(duplicate_result(kind, match, candidate))
-        return 1
+        decision = match.get("decision", "ingest")
+        if decision == "ingest":
+            result = duplicate_result(kind, match, candidate)
+            result["decision"] = decision
+            print_json(result)
+            return 1
+        # decision == "skip": an explicit record call overrides a prior
+        # skip decision, since the user is now choosing to ingest it.
 
+    candidate["decision"] = "ingest"
     candidate["ingested_at"] = utc_now_iso()
 
     append_jsonl(args.manifest, candidate)
@@ -288,13 +389,32 @@ def record_command(args: argparse.Namespace) -> int:
 
 def check_command(args: argparse.Namespace) -> int:
     path = require_file(args.path)
+
+    ignore_patterns = read_ignore_patterns(args.ignore_file)
+    rel_path = try_relative_to_raw(path, args.raw_dir)
+    if rel_path is not None:
+        matched_pattern = matches_ignore_patterns(rel_path, ignore_patterns)
+        if matched_pattern is not None:
+            print_json(
+                {
+                    "status": "ignored_by_path",
+                    "source_path": display_path(path),
+                    "matched_pattern": matched_pattern,
+                }
+            )
+            return 1
+
     candidate = build_file_record(path)
     records = read_jsonl(args.manifest)
 
     duplicate = find_duplicate(records, candidate)
     if duplicate is not None:
         kind, match = duplicate
-        print_json(duplicate_result(kind, match, candidate))
+        decision = match.get("decision", "ingest")
+        result = duplicate_result(kind, match, candidate)
+        result["status"] = "skip" if decision == "skip" else "duplicate"
+        result["decision"] = decision
+        print_json(result)
         return 1
 
     print_json(
@@ -306,10 +426,56 @@ def check_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def skip_command(args: argparse.Namespace) -> int:
+    path = require_file(args.path)
+    candidate = build_file_record(path)
+
+    candidate["decision"] = "skip"
+    candidate["skipped_at"] = utc_now_iso()
+    if args.reason:
+        candidate["reason"] = args.reason
+
+    append_jsonl(args.manifest, candidate)
+    print_json(candidate)
+    return 0
+
+
+def ignore_path_command(args: argparse.Namespace) -> int:
+    pattern = args.pattern.strip()
+    if not pattern:
+        raise SystemExit("ingest_guard: ignore pattern must not be empty")
+
+    normalized = pattern + "*" if pattern.endswith("/") else pattern
+    existing = read_ignore_patterns(args.ignore_file)
+
+    if normalized in existing:
+        print_json(
+            {
+                "status": "exists",
+                "pattern": normalized,
+                "ignore_file": args.ignore_file.as_posix(),
+            }
+        )
+        return 0
+
+    args.ignore_file.parent.mkdir(parents=True, exist_ok=True)
+    with args.ignore_file.open("a", encoding="utf-8") as handle:
+        handle.write(pattern + "\n")
+
+    print_json(
+        {
+            "status": "added",
+            "pattern": normalized,
+            "ignore_file": args.ignore_file.as_posix(),
+        }
+    )
+    return 0
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ingest_guard",
-        description="Guard LLM Wiki raw ingests against duplicate source files",
+        description="Guard LLM Wiki raw ingests against duplicate or unwanted source files",
     )
 
     parser.add_argument(
@@ -320,6 +486,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--raw-dir", type=Path, default=RAW_DIR, help="raw directory to inspect"
+    )
+    parser.add_argument(
+        "--ignore-file",
+        type=Path,
+        default=IGNORE_PATH,
+        dest="ignore_file",
+        help="path to the raw/ path-ignore list",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -341,15 +514,42 @@ def build_arg_parser() -> argparse.ArgumentParser:
     record_parser.set_defaults(func=record_command)
 
     check_parser = subparsers.add_parser(
-        "check", help="check a file against the manifest for duplicates"
+        "check", help="check a file against the manifest and ignore list"
     )
     check_parser.add_argument(
         "path", type=Path, help="file to check, such as raw/README.md"
     )
     check_parser.set_defaults(func=check_command)
 
+    skip_parser = subparsers.add_parser(
+        "skip", help="mark one file as do-not-ingest in the manifest"
+    )
+    skip_parser.add_argument(
+        "path",
+        type=Path,
+        help="file to mark as skipped, such as raw/quarterly-notes.pdf",
+    )
+    skip_parser.add_argument(
+        "--reason",
+        type=str,
+        default=None,
+        help="optional human-readable reason for skipping",
+    )
+    skip_parser.set_defaults(func=skip_command)
+
+    ignore_path_parser = subparsers.add_parser(
+        "ignore-path",
+        help="add a path pattern to the raw/ ignore list, such as a whole folder",
+    )
+    ignore_path_parser.add_argument(
+        "pattern",
+        type=str,
+        help="fnmatch-style glob relative to raw/, such as Financials/Archive/",
+    )
+    ignore_path_parser.set_defaults(func=ignore_path_command)
+
     audit_parser = subparsers.add_parser(
-        "audit", help="inspect raw/ against the manifest without writing"
+        "audit", help="inspect raw/ against the manifest and ignore list without writing"
     )
     audit_parser.set_defaults(func=audit_command)
 

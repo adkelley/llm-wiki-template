@@ -16,7 +16,9 @@ scripts/wiki/ingest_guard.py
 ```
 
 The ingest guard helps prevent users from accidentally ingesting duplicate
-material. It records successful ingests in a local JSON Lines manifest:
+material, and lets them mark specific files or whole folders as
+do-not-ingest. It records every ingest decision in a local JSON Lines
+manifest:
 
 ```text
 .llm-wiki/ingest-manifest.jsonl
@@ -29,15 +31,58 @@ Each manifest line is one JSON object. Current records include:
 - `size_bytes`
 - `byte_sha256`
 - `text_sha256` for plain-text files
+- `decision` — `"ingest"` or `"skip"`
 - `ingested_at` for recorded ingests
+- `skipped_at` and optional `reason` for recorded skips
+
+When a file's hash matches more than one manifest record, the most recently
+appended record wins — so ingesting a previously skipped file, or skipping a
+previously ingested one, overrides the earlier decision without editing
+history.
+
+Whole folders can be excluded without hashing or recording every file inside
+them, using a separate path-ignore list:
+
+```text
+.llm-wiki/raw-ignore.txt
+```
+
+One fnmatch-style glob pattern per line, matched against each file's path
+relative to `raw/`. Files matching a pattern are excluded before hashing and
+never appear in the manifest.
+
+#### Path-Ignore File Format
+
+`.llm-wiki/raw-ignore.txt` follows a few simple rules:
+
+- One pattern per line.
+- Blank lines are skipped.
+- Lines starting with `#` are comments and are skipped.
+- A line ending in `/` is treated as a whole folder: the trailing slash is
+  expanded to `/*` internally, so `Financials/Archive/` matches every file
+  under that folder, including files added later. Writing the glob yourself
+  (`Financials/Archive/*`) has the same effect.
+- Patterns are matched with Python's `fnmatch` against the file's path
+  relative to `raw/`, using forward slashes regardless of platform.
+- Matching is case-insensitive on macOS and Windows and case-sensitive on
+  Linux, since `fnmatch` follows the OS's own path case-folding rules.
+
+Example file:
+
+```text
+# personal financial archive, not wiki-relevant
+Financials/Archive/
+drafts/scratch-*.md
+```
 
 The current workflow is:
 
 1. compute a SHA-256 hash of the source file bytes
 2. extract and normalize text, then compute a SHA-256 hash of the normalized text
-3. compare both hashes against an ingestion manifest
-4. stop or proceed based on whether a byte or normalized-text duplicate exists
-5. record successful ingests in `.llm-wiki/ingest-manifest.jsonl`
+3. compare both hashes against the manifest, honoring the latest decision
+4. stop, skip, or proceed based on whether a duplicate, skip, or ignored-path
+   match exists
+5. record ingest and skip decisions in `.llm-wiki/ingest-manifest.jsonl`
 
 ### Ingest Guard Usage
 
@@ -47,26 +92,46 @@ Compute hashes for one file without reading or writing the manifest:
 python3 scripts/wiki/ingest_guard.py hash raw/README.md
 ```
 
-Check whether a candidate file matches a prior ingest:
+Check whether a candidate file matches a prior ingest, a prior skip, or an
+ignored path:
 
 ```bash
 python3 scripts/wiki/ingest_guard.py check raw/README.md
 ```
 
 Append a successful ingest record. This refuses byte-identical and
-normalized-text duplicates:
+normalized-text duplicates that are still recorded as ingested — recording a
+file that was previously marked skip overrides that skip:
 
 ```bash
 python3 scripts/wiki/ingest_guard.py record raw/README.md
 ```
 
-Inspect `raw/` against the manifest without writing:
+Mark one specific file as do-not-ingest, with an optional reason:
+
+```bash
+python3 scripts/wiki/ingest_guard.py skip raw/quarterly-notes.pdf \
+  --reason "personal, not wiki-relevant"
+```
+
+Add a whole folder (or any glob pattern) to the path-ignore list, so nothing
+under it — including files added later — is ever surfaced as new:
+
+```bash
+python3 scripts/wiki/ingest_guard.py ignore-path "Financials/Archive/"
+```
+
+Inspect `raw/` against the manifest and ignore list without writing:
 
 ```bash
 python3 scripts/wiki/ingest_guard.py audit
 ```
 
-Backfill the manifest from files already present under `raw/`:
+`audit` reports counts and a per-file `status` of `known` (already ingested),
+`new`, `skipped` (previously marked do-not-ingest), or `ignored_by_path`.
+
+Backfill the manifest from files already present under `raw/`, skipping
+anything matched by the path-ignore list:
 
 ```bash
 python3 scripts/wiki/ingest_guard.py index-existing

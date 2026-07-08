@@ -144,17 +144,29 @@ When I say "ingest [filename]" or "ingest raw/[path]":
    `python3 scripts/wiki/ingest_guard.py check raw/[path]`
 2. If the guard reports a duplicate, stop and report the matching manifest
    record instead of ingesting the file again.
-3. Read the source file from raw/.
-4. Discuss key takeaways with me (3–5 bullet points).
-5. Create wiki/sources/summary-{slug}.md with full summary.
-6. Update wiki/index.md — add new page with one-line summary.
-7. Update ALL relevant concept and entity pages with new info.
-8. If new info contradicts an existing page, flag it explicitly.
-9. Create new concept/entity pages if the source introduces them.
-10. Append a structured entry to wiki/log.md (see Log Format below).
-11. Record the successful ingest:
+3. If the guard reports `status: "skip"`, this file was previously marked
+   do-not-ingest. Stop and tell me the recorded reason (if any); only
+   continue if I explicitly confirm I want to ingest it anyway.
+4. If the guard reports `status: "ignored_by_path"`, this file falls under a
+   folder or pattern I've excluded in `.llm-wiki/raw-ignore.txt`. Stop and
+   tell me the matched pattern; only continue if I explicitly confirm.
+5. Read the source file from raw/.
+6. Discuss key takeaways with me (3–5 bullet points).
+7. Create wiki/sources/summary-{slug}.md with full summary.
+8. Update wiki/index.md — add new page with one-line summary.
+9. Update ALL relevant concept and entity pages with new info.
+10. If new info contradicts an existing page, flag it explicitly.
+11. Create new concept/entity pages if the source introduces them.
+12. Append a structured entry to wiki/log.md (see Log Format below).
+13. Record the successful ingest — this also overrides any prior skip
+    decision for this file:
     `python3 scripts/wiki/ingest_guard.py record raw/[path]`
-12. A single ingest should touch 5–15 wiki pages.
+14. A single ingest should touch 5–15 wiki pages.
+
+If instead I say a file or folder should never be ingested, record that
+decision rather than just skipping it silently:
+- one file: `python3 scripts/wiki/ingest_guard.py skip raw/[path] --reason "..."`
+- a folder or pattern: `python3 scripts/wiki/ingest_guard.py ignore-path "[folder]/"`
 
 ---
 
