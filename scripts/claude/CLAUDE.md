@@ -12,6 +12,11 @@
 - `CLAUDE.md` — this file. Re-read at the start of every session.
 - `wiki/hot.md` — session hot cache (~500 words). Read silently at session start BEFORE responding.
 
+## Tool Dependency Resolution
+Do not install or update a dependency merely because its bare command is
+unavailable. Check the skill's documented non-installing resolution methods
+first, and request user approval before installing anything.
+
 ## Page Conventions
 Every wiki page MUST have YAML frontmatter. Use these schemas:
 

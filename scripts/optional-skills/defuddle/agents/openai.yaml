@@ -1,0 +1,4 @@
+interface:
+  display_name: "Defuddle Web Capture"
+  short_description: "Capture clean web articles into raw Markdown"
+  default_prompt: "Use $defuddle to capture this web page as clean raw Markdown."

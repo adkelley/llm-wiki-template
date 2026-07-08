@@ -32,6 +32,9 @@ These skills are ONLY available when operating within this repository.
   - Generate commands using those tools
   - Do NOT reimplement tool logic inline unless explicitly required
   - Prefer deterministic, reproducible commands
+- Do not install or update a dependency merely because its bare command is
+  unavailable. Check the skill's documented non-installing resolution methods
+  first, and request user approval before installing anything.
 
 ### Skill Composition
 - Multiple skills may be used together when appropriate
