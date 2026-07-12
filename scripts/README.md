@@ -269,6 +269,43 @@ python3 scripts/wiki/template_guard.py record \
 - `preserve` - the target appears to have local changes and should not be
   overwritten automatically
 
+## Migration of Wiki frontmatter
+
+The LLM Wiki schema evolves as new capabilities are introduced. Migration
+scripts update existing wiki pages to newer schemas while preserving their
+substantive content.
+
+The first migration script, `scripts/wiki/migrate_v1.py`, assigns a permanent,
+type-specific ID to each supported wiki page. The ID field immediately follows
+the existing `type` field:
+
+- `source_id: source:{slug}`
+- `concept_id: concept:{slug}`
+- `entity_id: entity:{slug}`
+- `comparison_id: comparison:{slug}`
+- `synthesis_id: synthesis:{slug}`
+- `trace_id: trace:{slug}`
+
+```bash
+python3 scripts/wiki/migrate_v1.py --wiki-dir wiki
+python3 scripts/wiki/migrate_v1.py --wiki-dir wiki --apply
+python3 scripts/wiki/migrate_v1.py --wiki-dir wiki --json
+python3 scripts/wiki/migrate_v1.py --wiki-dir wiki --apply --json
+```
+
+New IDs are derived deterministically from page filenames. Once assigned, an ID
+is permanent and is not changed merely because a page is renamed or moved.
+
+- Preview is the default.
+- `--apply` writes only after complete validation.
+- `--json` emits a single machine-readable JSON report instead of human-readable
+  output; it does not imply `--apply`
+- `--json` may be combined with `apply` to report the changes actually made.
+- Existing valid IDs are preserved.
+- Invalid frontmatter and duplicate IDs block all writes.
+- Users should commit or back up their wiki first.
+- A second run should report `pending=0`.
+
 ## Claude Code
 
 If you are using Claude Code, run:

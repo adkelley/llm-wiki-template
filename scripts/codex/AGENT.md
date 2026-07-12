@@ -23,6 +23,7 @@ Every wiki page MUST have YAML frontmatter. Use these schemas:
 ### Source Summary Pages (wiki/sources/)
 ---
 type: source
+source_id: source:{slug}
 title: "Article/Paper Title"
 slug: summary-{slug}
 source_file: raw/{filename}.md
@@ -42,6 +43,7 @@ confidence: high | medium | low
 ### Concept Pages (wiki/concepts/)
 ---
 type: concept
+concept_id: concept:{slug}
 title: "Concept Name"
 aliases:
   - alt-name
@@ -60,6 +62,7 @@ confidence: high | medium | low
 ### Entity Pages (wiki/entities/)
 ---
 type: entity
+entity_id: entity:{slug}
 entity_type: person | company | product | org
 title: "Entity Name"
 sources:
@@ -75,6 +78,7 @@ updated: YYYY-MM-DD
 ### Comparison Pages (wiki/comparisons/)
 ---
 type: comparison
+comparison_id: comparison:{slug}
 title: "Comparing X vs Y"
 sources:
   - "[[source1]]"
@@ -87,6 +91,7 @@ updated: YYYY-MM-DD
 ### Synthesis Pages (wiki/syntheses/)
 ---
 type: synthesis
+synthesis_id: synthesis:{slug}
 title: "Synthesis Title"
 sources:
   - "[[source1]]"
@@ -95,6 +100,40 @@ filed_from_query: true
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 ---
+
+### Trace Pages (wiki/traces/)
+---
+type: trace
+trace_id: trace:{slug}
+concept: "Concept Title"
+sources:
+  - "[[source1]]"
+  - "[[source2]]"
+filed_from_query: true
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+ingest_range: YYYY-MM-DD → YYYY-MM-DD
+---
+
+## Stable Page IDs
+
+Every wiki page type defined above MUST have its corresponding stable ID.
+
+Stable IDs use `{type}:{slug}`:
+
+- `source:sample-report`
+- `concept:machine-learning`
+- `entity:acme-corporation`
+- `comparison:acme-vs-globex`
+- `synthesis:market-overview`
+- `trace:machine-learning-adoption`
+
+Derive the slug from the page filename when creating a page.
+
+Stable IDs are permanent once assigned. Do not change an ID because a page
+title, filename, canonical label, or folder location changes.
+
+Before assigning an ID, search existing wiki pages to ensure it is unique.
 
 ## Ingest Workflow
 When I say "ingest [filename]" or "ingest raw/[path]":
