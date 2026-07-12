@@ -300,7 +300,10 @@ EOF
   claude_master_file="$repo_root/CLAUDE.md"
   claude_template_file="$repo_root/scripts/claude/CLAUDE.md"
 
-  install_managed_template "$claude_template_file" "$claude_master_file" "CLAUDE.md"
+  install_managed_template \
+    "$claude_template_file" \
+    "$claude_master_file" \
+    "CLAUDE.md"
 }
 
 install_optional_skills() {
