@@ -82,6 +82,42 @@ configure_domain() {
   fi
 }
 
+install_raw_protection_hook() {
+  local hook_file="$repo_root/.git/hooks/pre-commit"
+
+  if ! yes_no_prompt \
+    "Install a pre-commit hook that makes committed raw/ files read-only?"; then
+    echo "Skipped installing the raw/ protection hook"
+    return 0
+  fi
+
+  if [ -e "$hook_file" ]; then
+    echo "Skipped installing the raw/ protection hook"
+    echo "A pre-commit hook already exists at $hook_file"
+    return 0
+  fi
+
+  cat > "$hook_file" <<'HOOK'
+#!/usr/bin/env bash
+set -euo pipefail
+
+git diff --cached --name-only --diff-filter=ACM -z |
+while IFS= read -r -d '' file; do
+  case "$file" in
+    raw/*)
+      if [ -f "$file" ]; then
+        chmod a-w "$file"
+        echo "Set read-only: $file"
+      fi
+      ;;
+  esac
+done
+HOOK
+
+  chmod +x "$hook_file"
+  echo "Installed the raw/ protection hook at $hook_file"
+}
+
 is_valid_skill_dir() {
   local dir="$1"
   [ -d "$dir" ] && [ -f "$dir/SKILL.md" ]
@@ -392,6 +428,7 @@ install_optional_skills() {
 main() {
   repo_root="$(git rev-parse --show-toplevel)"
   setup_claude
+  install_raw_protection_hook
   install_optional_skills
 }
 
