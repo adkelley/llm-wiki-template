@@ -3,11 +3,16 @@
 .obsidian
 .local
 .venv
-commit.md
 __pycache__
+
+# Script configs and state
 scripts/optional-skills/ingest-mail/config.toml
 scripts/optional-skills/ingest-mail/state.jsonl
 scripts/optional-skills/ingest-mail/last_scan.txt
 scripts/optional-skills/ingest-apple-notes/config.toml
 scripts/optional-skills/ingest-apple-notes/state.jsonl
 scripts/optional-skills/ingest-apple-notes/last_scan.txt
+
+# CLAUDE / Codex backups
+CLAUDE.md.backup-*
+AGENT.md.backup-*

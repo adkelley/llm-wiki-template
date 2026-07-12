@@ -3,6 +3,85 @@ set -euo pipefail
 
 repo_root=""
 
+yes_no_prompt() {
+  local prompt="$1"
+  local response
+
+  while true; do
+    read -r -p "$prompt (y/N): " response
+
+    case "$response" in
+      y|Y|yes|YES)
+        return 0
+        ;;
+      ""|n|N|no|NO)
+        return 1
+        ;;
+      *)
+        echo "Please answer yes or no."
+        ;;
+    esac
+  done
+}
+
+prompt_for_domain() {
+  local domain
+
+  read -r -p "Wiki domain or project name (leave blank to configure later): " domain
+
+  # Trim leading/trailing whitespace
+  domain="${domain#"${domain%%[![:space:]]*}"}"
+  domain="${domain%"${domain##*[![:space:]]}"}"
+
+  if [ -z "$domain" ]; then
+    return 0
+  fi
+
+  printf '%s\n' "$domain"
+}
+
+apply_domain() {
+  local target_file="$1"
+  local domain="$2"
+
+  python3 - "$target_file" "$domain" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+domain = sys.argv[2]
+text = path.read_text()
+
+heading = "## Domain\n"
+placeholder = '[Enter your wiki subject here example - "AI LLM Research, May 2026 -"]'
+
+if heading not in text:
+    raise SystemExit(f"Domain heading not found in {path}")
+
+before, after = text.split(heading, 1)
+
+if placeholder not in after:
+    raise SystemExit(f"Domain placeholder not found in {path}")
+
+after = after.replace(placeholder, domain, 1)
+path.write_text(before + heading + after)
+PY
+}
+
+configure_domain() {
+  local target_file="$1"
+  local domain
+
+  domain="$(prompt_for_domain)"
+
+  if [ -n "$domain" ]; then
+    apply_domain "$target_file" "$domain"
+    echo "Set wiki domain to: $domain"
+  else
+    echo "Left the Domain placeholder unchanged"
+  fi
+}
+
 is_valid_skill_dir() {
   local dir="$1"
   [ -d "$dir" ] && [ -f "$dir/SKILL.md" ]
@@ -115,17 +194,20 @@ install_managed_template() {
   local target_file="$2"
   local target_name="$3"
   local status
+  local backup_file
 
   status="$(template_status "$template_file" "$target_file")"
 
   case "$status" in
     missing)
       cp "$template_file" "$target_file"
+      configure_domain "$target_file"
       record_installed_template "$template_file" "$target_file"
       echo "Copied $target_name to $target_file"
       ;;
     replace)
       cp "$template_file" "$target_file"
+      configure_domain "$target_file"
       record_installed_template "$template_file" "$target_file"
       echo "Updated $target_name from the latest template"
       ;;
@@ -137,7 +219,17 @@ install_managed_template() {
       echo "Skipped updating $target_name (already current)"
       ;;
     preserve)
-      echo "Skipped updating $target_name (local changes detected)"
+      if yes_no_prompt "$target_name has local changes. Replace it with the latest template?"; then
+        backup_file="$target_file.backup-$(date +%Y%m%d-%H%M%S)"
+        cp "$target_file" "$backup_file"
+        echo "Backed up $target_name to $backup_file"
+        cp "$template_file" "$target_file"
+        configure_domain "$target_file"
+        record_installed_template "$template_file" "$target_file"
+        echo "Updated $target_name from the latest template; backup saved to $backup_file"
+      else
+        echo "Skipped updating $target_name (local changes detected)"
+      fi
       ;;
     *)
       echo "Skipped updating $target_name (unrecognized template status: $status)"
