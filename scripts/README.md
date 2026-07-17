@@ -275,6 +275,11 @@ The LLM Wiki schema evolves as new capabilities are introduced. Migration
 scripts update existing wiki pages to newer schemas while preserving their
 substantive content.
 
+Run migrations in numerical order. Commit or back up the wiki before applying
+any migration.
+
+### Migration 001: Stable Page IDs
+
 The first migration script, `scripts/wiki/migrate_v1.py`, assigns a permanent,
 type-specific ID to each supported wiki page. The ID field immediately follows
 the existing `type` field:
@@ -300,11 +305,49 @@ is permanent and is not changed merely because a page is renamed or moved.
 - `--apply` writes only after complete validation.
 - `--json` emits a single machine-readable JSON report instead of human-readable
   output; it does not imply `--apply`
-- `--json` may be combined with `apply` to report the changes actually made.
+- `--json` may be combined with `--apply` to report the changes actually made.
 - Existing valid IDs are preserved.
 - Invalid frontmatter and duplicate IDs block all writes.
-- Users should commit or back up their wiki first.
 - A second run should report `pending=0`.
+
+### Migration 002: Entity Naming Schema
+
+After Migration 001, run `scripts/wiki/migrate_v2.py` to upgrade only entity
+pages under `wiki/entities/**/*.md`:
+
+```yaml
+title: "Acme Corporation"
+```
+
+becomes:
+
+```yaml
+canonical_name: "Acme Corporation"
+aliases: []
+abbreviations: []
+known_variants: []
+known_errors: []
+```
+
+```bash
+python3 scripts/wiki/migrate_v2.py --wiki-dir wiki
+python3 scripts/wiki/migrate_v2.py --wiki-dir wiki --apply
+python3 scripts/wiki/migrate_v2.py --wiki-dir wiki --json
+python3 scripts/wiki/migrate_v2.py --wiki-dir wiki --apply --json
+```
+
+- Preview is the default; `--apply` and `--json` behave as in Migration 001.
+- Existing `canonical_name` wins when a page contains both `title` and
+  `canonical_name`; the obsolete `title` field is removed.
+- Existing valid name-list values and their order are preserved. Missing fields
+  receive `field: []` immediately after `canonical_name`.
+- Empty name lists use `field: []`. Populated name lists use block form with one
+  nonempty scalar string per item; populated inline lists are not supported.
+- The migration performs no inference, lookup, normalization, deduplication, or
+  recategorization of names.
+- Malformed frontmatter, duplicate fields, invalid names, or malformed name
+  lists block every write.
+- Non-entity pages remain unchanged, and a second run reports `pending=0`.
 
 ## Claude Code
 
