@@ -64,7 +64,11 @@ confidence: high | medium | low
 type: entity
 entity_id: entity:{slug}
 entity_type: person | company | product | org
-title: "Entity Name"
+canonical_name: "Entity Name"
+aliases: []
+abbreviations: []
+known_variants: []
+known_errors: []
 sources:
   - "[[source1]]"
   - "[[source2]]"
@@ -74,6 +78,26 @@ related:
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 ---
+
+Entity naming fields follow these rules:
+
+- `canonical_name` is the single preferred display name and MUST be a nonempty
+  scalar string. Entity pages MUST NOT use `title`.
+- `aliases` contains other established names.
+- `abbreviations` contains acronyms, initialisms, and established shortened
+  forms.
+- `known_variants` contains legitimate spelling, formatting, transliteration,
+  or historical variants.
+- `known_errors` contains documented incorrect names and common misspellings.
+- Represent an empty name list as `field: []`. Represent a populated name list
+  in block form, with one nonempty scalar string per item. Do not use populated
+  inline lists.
+- Never invent, infer, normalize, deduplicate, or reclassify name values merely
+  to populate a field. Add a value only when supported by source material or
+  explicitly supplied by the user. Leave unknown categories as `[]`.
+- When updating an entity, preserve its `entity_id`, existing naming values,
+  and value order unless correcting a demonstrated error. Keep exactly one
+  `canonical_name` and never reintroduce `title`.
 
 ### Comparison Pages (wiki/comparisons/)
 ---

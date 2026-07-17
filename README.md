@@ -184,6 +184,16 @@ This setup script can:
 
 For more details, see `scripts/codex/README.md`.
 
+## Upgrading an existing wiki
+
+Setup may update the generated agent instructions, but it does not rewrite
+existing wiki pages. Existing wikis should run schema migrations in numerical
+order before agents create or maintain pages under the current conventions.
+Preview every migration and commit or back up the wiki before applying it.
+
+See [Migration of Wiki frontmatter](scripts/README.md#migration-of-wiki-frontmatter)
+for commands, schema changes, validation behavior, and JSON reporting.
+
 ## Obsidian
 
 If you use [Obsidian](https://obsidian.md/) as your IDE, you may also want to configure the repository for an Obsidian-based wiki workflow.

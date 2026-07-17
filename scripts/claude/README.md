@@ -52,6 +52,23 @@ After running the script, review and customize `CLAUDE.md` for your workflow.
 
 In particular, make sure to update the `Domain` section so it reflects the subject area of your wiki.
 
+## Upgrading an existing wiki
+
+The generated `CLAUDE.md` uses the current entity naming schema. Updating that
+template does not migrate existing wiki pages. Preview and apply the migrations
+in numerical order:
+
+```bash
+python3 scripts/wiki/migrate_v1.py --wiki-dir wiki
+python3 scripts/wiki/migrate_v1.py --wiki-dir wiki --apply
+python3 scripts/wiki/migrate_v2.py --wiki-dir wiki
+python3 scripts/wiki/migrate_v2.py --wiki-dir wiki --apply
+```
+
+Commit or back up the wiki first. See
+[Migration of Wiki frontmatter](../README.md#migration-of-wiki-frontmatter) for
+schema details, validation behavior, and JSON reporting.
+
 ## Notes
 
 - The repository should already be initialized as a Git repository.

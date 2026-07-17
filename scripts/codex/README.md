@@ -40,6 +40,23 @@ After running the script, review and customize `AGENT.md` for your workflow.
 
 In particular, make sure to update the `Domain` section so it reflects the subject area of your wiki.
 
+## Upgrading an existing wiki
+
+The generated `AGENT.md` uses the current entity naming schema. Updating that
+template does not migrate existing wiki pages. Preview and apply the migrations
+in numerical order:
+
+```bash
+python3 scripts/wiki/migrate_v1.py --wiki-dir wiki
+python3 scripts/wiki/migrate_v1.py --wiki-dir wiki --apply
+python3 scripts/wiki/migrate_v2.py --wiki-dir wiki
+python3 scripts/wiki/migrate_v2.py --wiki-dir wiki --apply
+```
+
+Commit or back up the wiki first. See
+[Migration of Wiki frontmatter](../README.md#migration-of-wiki-frontmatter) for
+schema details, validation behavior, and JSON reporting.
+
 ## Obsidian
 
 If you also use [Obsidian](https://obsidian.md/) as your IDE, you may want to install Obsidian-related skills and configure `.obsidian/app.json` for an Obsidian-based wiki workflow.
