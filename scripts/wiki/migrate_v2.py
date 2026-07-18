@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 """
-Migrate entity-page frontmatter from the legacy title schema to naming schema v2.
+Migrate entity and concept page frontmatter from the legacy title schema to naming schema v2.
 
-The migration recursively inspects Markdown files under ``wiki/entities``.
+The migration recursively inspects Markdown files under ``wiki/entities`` and ``wiki/concepts``.
 It replaces ``title`` with ``canonical_name`` and adds any missing entity-name
 list fields: ``aliases``, ``abbreviations``, ``known_variants``, and
 ``known_errors``.
@@ -68,7 +68,10 @@ EMPTY_VALUES = (
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="migrate_v2",
-        description="A preview-first migration that upgrades only `wiki/entities/**/*.md`.",
+        description=(
+            "A preview-first migration that upgrades "
+            "`wiki/entities/**/*.md` and `wiki/concepts/**/*.md`."
+        ),
     )
     parser.add_argument(
         "--wiki-dir",
@@ -170,11 +173,7 @@ def block_list_validation_error(path: Path, field_name: str) -> str | None:
                 return invalid_list
 
             item = stripped[2:].strip()
-            quoted = (
-                len(item) >= 2
-                and item[0] == item[-1]
-                and item[0] in ('"', "'")
-            )
+            quoted = len(item) >= 2 and item[0] == item[-1] and item[0] in ('"', "'")
             if (
                 is_empty_value(item)
                 or is_null_value(item)
@@ -214,7 +213,7 @@ def is_null_value(value: str | None) -> bool:
     return stripped == "~" or stripped.casefold() == "null"
 
 
-def plan_entity_page(path: Path) -> PagePlan:
+def plan_page(path: Path, expected_type: str) -> PagePlan:
     errors: list[str] = []
     missing_name_fields: list[str] = []
 
@@ -232,8 +231,10 @@ def plan_entity_page(path: Path) -> PagePlan:
 
     if frontmatter_valid:
         actual_type = frontmatter.get("type")
-        if actual_type != "entity":
-            errors.append(f"{path}: expected type: entity, found {actual_type!r}")
+        if actual_type != expected_type:
+            errors.append(
+                f"{path}: expected type: {expected_type}, found {actual_type!r}"
+            )
 
         existing_title = frontmatter.get("title")
         if is_empty_value(existing_title):
@@ -289,21 +290,27 @@ def plan_entity_page(path: Path) -> PagePlan:
     )
 
 
-def build_migration_plan(entity_dir: Path) -> MigrationPlan:
+def build_migration_plan(entities_dir: Path) -> MigrationPlan:
     pages: list[PagePlan] = []
     errors: list[str] = []
 
     # Validate and collect pages
-    if not entity_dir.is_dir():
+    if not entities_dir.is_dir():
         return MigrationPlan(
             pages=(),
-            errors=(f"{entity_dir}: entity directory does not exist",),
+            errors=(f"{entities_dir}: entities directory does not exist",),
         )
 
-    for path in iter_pages(entity_dir):
-        page = plan_entity_page(path)
-        pages.append(page)
-        errors.extend(page.errors)
+    concepts_dir = entities_dir.parent / "concepts"
+    page_directories: list[tuple[Path, str]] = [
+        (entities_dir, "entity"),
+        (concepts_dir, "concept"),
+    ]
+    for page_dir, page_type in page_directories:
+        for path in iter_pages(page_dir):
+            page = plan_page(path, page_type)
+            pages.append(page)
+            errors.extend(page.errors)
 
     return MigrationPlan(
         pages=tuple(pages),
