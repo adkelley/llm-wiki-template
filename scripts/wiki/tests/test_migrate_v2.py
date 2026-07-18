@@ -78,6 +78,270 @@ class MigrateV2Tests(unittest.TestCase):
         path.write_text(newline.join(lines), encoding="utf-8", newline="")
         return path
 
+    def write_concept_page(
+        self,
+        *frontmatter_lines: str,
+        filename: str = "knowledge-graph.md",
+        body_lines: tuple[str, ...] = (),
+        newline: str = "\n",
+    ) -> Path:
+        concepts_dir = self.wiki_dir / "concepts"
+        concepts_dir.mkdir(parents=True, exist_ok=True)
+
+        path = concepts_dir / filename
+        lines = [
+            "---",
+            "type: concept",
+            f"concept_id: concept:{path.stem}",
+            *frontmatter_lines,
+            "---",
+            "",
+            *body_lines,
+        ]
+        path.write_text(newline.join(lines), encoding="utf-8", newline="")
+        return path
+
+    def test_build_plan_finds_entity_and_concept_pages(self) -> None:
+        entity_path = self.write_entity_page('title: "Acme Corporation"')
+        concept_path = self.write_concept_page('title: "Knowledge Graph"')
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+
+        self.assertEqual(
+            {page.path for page in migration.pages},
+            {entity_path, concept_path},
+        )
+
+    def test_build_plan_prepares_legacy_concept_name_fields(self) -> None:
+        self.entities_dir.mkdir()
+        concept_path = self.write_concept_page('title: "Knowledge Graph"')
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        concept_plan = next(
+            page for page in migration.pages if page.path == concept_path
+        )
+
+        self.assertTrue(migration.is_valid)
+        self.assertEqual(concept_plan.existing_title, '"Knowledge Graph"')
+        self.assertEqual(
+            concept_plan.proposed_canonical_name,
+            '"Knowledge Graph"',
+        )
+        self.assertEqual(concept_plan.missing_name_fields, migrate_v2.NAME_FIELDS)
+
+    def test_render_page_migrates_legacy_concept_name_fields(self) -> None:
+        self.entities_dir.mkdir()
+        concept_path = self.write_concept_page('title: "Knowledge Graph"')
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        concept_plan = next(
+            page for page in migration.pages if page.path == concept_path
+        )
+        rendered = migrate_v2.render_page(concept_plan)
+
+        expected_name_block = "\n".join(
+            [
+                'canonical_name: "Knowledge Graph"',
+                "aliases: []",
+                "abbreviations: []",
+                "known_variants: []",
+                "known_errors: []",
+            ]
+        )
+        self.assertIn(expected_name_block, rendered)
+        self.assertNotIn('\ntitle: "Knowledge Graph"', rendered)
+
+    def test_render_concept_preserves_aliases_metadata_and_body(self) -> None:
+        self.entities_dir.mkdir()
+        concept_path = self.write_concept_page(
+            'title: "Knowledge Graph"',
+            "aliases:",
+            '  - "Semantic Network"',
+            '  - "Knowledge Representation Graph"',
+            "sources:",
+            '  - "[[source-one]]"',
+            "related:",
+            '  - "[[linked-data]]"',
+            "created: 2026-07-01",
+            "updated: 2026-07-18",
+            "confidence: high",
+            body_lines=("# Knowledge Graph", "", "Concept body."),
+        )
+        original = concept_path.read_bytes()
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        concept_plan = next(
+            page for page in migration.pages if page.path == concept_path
+        )
+        rendered = migrate_v2.render_page(concept_plan)
+
+        self.assertIn(
+            'aliases:\n  - "Semantic Network"\n'
+            '  - "Knowledge Representation Graph"',
+            rendered,
+        )
+        self.assertIn("abbreviations: []", rendered)
+        self.assertIn("known_variants: []", rendered)
+        self.assertIn("known_errors: []", rendered)
+        self.assertIn('sources:\n  - "[[source-one]]"', rendered)
+        self.assertIn('related:\n  - "[[linked-data]]"', rendered)
+        self.assertIn("created: 2026-07-01", rendered)
+        self.assertIn("updated: 2026-07-18", rendered)
+        self.assertIn("confidence: high", rendered)
+        self.assertTrue(rendered.endswith("# Knowledge Graph\n\nConcept body."))
+        self.assertEqual(concept_path.read_bytes(), original)
+
+    def test_render_concept_prefers_existing_canonical_name(self) -> None:
+        self.entities_dir.mkdir()
+        concept_path = self.write_concept_page(
+            'title: "Old Knowledge Graph Name"',
+            'canonical_name: "Knowledge Graph"',
+            "aliases: []",
+            "abbreviations: []",
+            "known_variants: []",
+            "known_errors: []",
+        )
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        concept_plan = next(
+            page for page in migration.pages if page.path == concept_path
+        )
+        rendered = migrate_v2.render_page(concept_plan)
+
+        self.assertEqual(
+            concept_plan.proposed_canonical_name,
+            '"Knowledge Graph"',
+        )
+        self.assertEqual(rendered.count("\ncanonical_name:"), 1)
+        self.assertIn('canonical_name: "Knowledge Graph"', rendered)
+        self.assertNotIn('\ntitle: "Old Knowledge Graph Name"', rendered)
+        self.assertNotIn('canonical_name: "Old Knowledge Graph Name"', rendered)
+
+    def test_build_plan_rejects_non_list_concept_name_field(self) -> None:
+        self.entities_dir.mkdir()
+        concept_path = self.write_concept_page(
+            'canonical_name: "Knowledge Graph"',
+            "aliases: not-a-list",
+            "abbreviations: []",
+            "known_variants: []",
+            "known_errors: []",
+        )
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        concept_plan = next(
+            page for page in migration.pages if page.path == concept_path
+        )
+
+        self.assertFalse(migration.is_valid)
+        self.assertFalse(concept_plan.needs_change)
+        self.assertTrue(
+            any(
+                "aliases must be a list" in error
+                for error in concept_plan.errors
+            )
+        )
+
+    def test_invalid_concept_prevents_entity_and_concept_writes(self) -> None:
+        entity_path = self.write_entity_page('title: "Acme Corporation"')
+        concept_path = self.write_concept_page(
+            'canonical_name: "Knowledge Graph"',
+            "aliases: not-a-list",
+            "abbreviations: []",
+            "known_variants: []",
+            "known_errors: []",
+        )
+        originals = {
+            entity_path: entity_path.read_bytes(),
+            concept_path: concept_path.read_bytes(),
+        }
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+
+        self.assertFalse(migration.is_valid)
+        with self.assertRaisesRegex(ValueError, "invalid migration"):
+            migrate_v2.apply_migration(migration)
+        for path, original in originals.items():
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_cli_preview_json_reports_entity_and_concept_pages(self) -> None:
+        entity_path = self.write_entity_page('title: "Acme Corporation"')
+        concept_path = self.write_concept_page('title: "Knowledge Graph"')
+        originals = {
+            entity_path: entity_path.read_bytes(),
+            concept_path: concept_path.read_bytes(),
+        }
+
+        result = run_cli("--wiki-dir", str(self.wiki_dir), "--json")
+        report = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(report["page_count"], 2)
+        self.assertEqual(report["pending_count"], 2)
+        self.assertEqual(report["changed_count"], 0)
+        self.assertEqual(
+            report["pending_paths"],
+            [str(entity_path), str(concept_path)],
+        )
+        for path, original in originals.items():
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_cli_description_mentions_entity_and_concept_pages(self) -> None:
+        parser = migrate_v2.build_arg_parser()
+
+        self.assertIn("entit", parser.description.casefold())
+        self.assertIn("concept", parser.description.casefold())
+
+    def test_apply_migration_writes_entity_and_concept_pages(self) -> None:
+        entity_path = self.write_entity_page('title: "Acme Corporation"')
+        concept_path = self.write_concept_page('title: "Knowledge Graph"')
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        changed = migrate_v2.apply_migration(migration)
+
+        self.assertEqual(changed, (entity_path, concept_path))
+        for path, canonical_name in (
+            (entity_path, "Acme Corporation"),
+            (concept_path, "Knowledge Graph"),
+        ):
+            migrated = path.read_text(encoding="utf-8")
+            self.assertIn(f'canonical_name: "{canonical_name}"', migrated)
+            self.assertNotIn("\ntitle:", migrated)
+            for field in migrate_v2.NAME_FIELDS:
+                self.assertIn(f"{field}: []", migrated)
+
+    def test_concept_apply_is_idempotent_and_preserves_crlf(self) -> None:
+        self.entities_dir.mkdir()
+        concept_path = self.write_concept_page(
+            'title: "Knowledge Graph"',
+            newline="\r\n",
+        )
+
+        first_plan = migrate_v2.build_migration_plan(self.entities_dir)
+        first_changed = migrate_v2.apply_migration(first_plan)
+        after_first_apply = concept_path.read_bytes()
+
+        second_plan = migrate_v2.build_migration_plan(self.entities_dir)
+        second_changed = migrate_v2.apply_migration(second_plan)
+
+        self.assertEqual(first_changed, (concept_path,))
+        self.assertIn(
+            b'canonical_name: "Knowledge Graph"\r\n',
+            after_first_apply,
+        )
+        self.assertNotIn(b"\n", after_first_apply.replace(b"\r\n", b""))
+        self.assertEqual(second_changed, ())
+        self.assertEqual(concept_path.read_bytes(), after_first_apply)
+
+    def test_module_description_mentions_entity_and_concept_pages(self) -> None:
+        module_docstring = migrate_v2.__doc__
+        if module_docstring is None:
+            self.fail("migrate_v2 must have a module docstring")
+        description = module_docstring.casefold()
+
+        self.assertIn("entit", description)
+        self.assertIn("concept", description)
+
     def test_render_page_renames_title_to_canonical_name(self) -> None:
         entities_dir = self.wiki_dir / "entities"
         entities_dir.mkdir()
@@ -338,8 +602,7 @@ class MigrateV2Tests(unittest.TestCase):
         self.assertFalse(migration.pages[0].needs_change)
         self.assertTrue(
             any(
-                "canonical_name must be a scalar" in error
-                for error in migration.errors
+                "canonical_name must be a scalar" in error for error in migration.errors
             )
         )
 
@@ -358,8 +621,7 @@ class MigrateV2Tests(unittest.TestCase):
         self.assertFalse(migration.pages[0].needs_change)
         self.assertTrue(
             any(
-                "canonical_name must be a scalar" in error
-                for error in migration.errors
+                "canonical_name must be a scalar" in error for error in migration.errors
             )
         )
 
@@ -394,9 +656,7 @@ class MigrateV2Tests(unittest.TestCase):
         self.assertFalse(migration.is_valid)
         self.assertFalse(migration.pages[0].needs_change)
         self.assertTrue(
-            any(
-                "aliases must be a list" in error for error in migration.errors
-            )
+            any("aliases must be a list" in error for error in migration.errors)
         )
 
     def test_build_plan_rejects_bare_name_field_without_list_items(self) -> None:
@@ -413,9 +673,7 @@ class MigrateV2Tests(unittest.TestCase):
         self.assertFalse(migration.is_valid)
         self.assertFalse(migration.pages[0].needs_change)
         self.assertTrue(
-            any(
-                "aliases must be a list" in error for error in migration.errors
-            )
+            any("aliases must be a list" in error for error in migration.errors)
         )
 
     def test_build_plan_rejects_malformed_block_list(self) -> None:
@@ -451,9 +709,7 @@ class MigrateV2Tests(unittest.TestCase):
         self.assertFalse(migration.is_valid)
         self.assertFalse(migration.pages[0].needs_change)
         self.assertTrue(
-            any(
-                "duplicate field: aliases" in error for error in migration.errors
-            )
+            any("duplicate field: aliases" in error for error in migration.errors)
         )
 
     def test_build_plan_rejects_duplicate_field_with_key_spacing(self) -> None:
@@ -470,9 +726,7 @@ class MigrateV2Tests(unittest.TestCase):
 
         self.assertFalse(migration.is_valid)
         self.assertTrue(
-            any(
-                "duplicate field: aliases" in error for error in migration.errors
-            )
+            any("duplicate field: aliases" in error for error in migration.errors)
         )
 
     def test_build_plan_reports_malformed_frontmatter_once(self) -> None:
@@ -526,10 +780,7 @@ class MigrateV2Tests(unittest.TestCase):
 
         self.assertFalse(migration.is_valid)
         self.assertTrue(
-            any(
-                "malformed frontmatter line" in error
-                for error in migration.errors
-            )
+            any("malformed frontmatter line" in error for error in migration.errors)
         )
 
     def test_build_plan_rejects_page_with_wrong_type(self) -> None:
@@ -550,25 +801,27 @@ class MigrateV2Tests(unittest.TestCase):
             any("expected type: entity" in error for error in migration.errors)
         )
 
-    def test_build_plan_ignores_markdown_files_outside_entities(self) -> None:
+    def test_build_plan_ignores_markdown_files_outside_supported_directories(
+        self,
+    ) -> None:
         self.entities_dir.mkdir()
-        concepts_dir = self.wiki_dir / "concepts"
-        concepts_dir.mkdir()
-        concept_path = concepts_dir / "knowledge-graph.md"
-        concept_path.write_text(
+        sources_dir = self.wiki_dir / "sources"
+        sources_dir.mkdir()
+        source_path = sources_dir / "article.md"
+        source_path.write_text(
             "\n".join(
                 [
                     "---",
-                    "type: concept",
-                    "concept_id: concept:knowledge-graph",
-                    'title: "Knowledge Graph"',
+                    "type: source",
+                    "source_id: source:article",
+                    'title: "Article"',
                     "---",
                     "",
                 ]
             ),
             encoding="utf-8",
         )
-        original = concept_path.read_bytes()
+        original = source_path.read_bytes()
 
         migration = migrate_v2.build_migration_plan(self.entities_dir)
         changed = migrate_v2.apply_migration(migration)
@@ -576,7 +829,7 @@ class MigrateV2Tests(unittest.TestCase):
         self.assertTrue(migration.is_valid)
         self.assertEqual(migration.pages, ())
         self.assertEqual(changed, ())
-        self.assertEqual(concept_path.read_bytes(), original)
+        self.assertEqual(source_path.read_bytes(), original)
 
     def test_build_plan_rejects_yaml_null_canonical_names(self) -> None:
         for null_value in ("null", "Null", "NULL", "~"):
@@ -933,5 +1186,5 @@ class MigrateV2Tests(unittest.TestCase):
         self.assertEqual(report["pending_paths"], [])
         self.assertEqual(report["changed_paths"], [])
         self.assertEqual(len(report["errors"]), 1)
-        self.assertIn("entity directory does not exist", report["errors"][0])
+        self.assertIn("entities directory does not exist", report["errors"][0])
         self.assertNotIn("Traceback", result.stdout)

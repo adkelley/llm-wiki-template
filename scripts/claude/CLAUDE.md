@@ -44,10 +44,11 @@ confidence: high | medium | low
 ---
 type: concept
 concept_id: concept:{slug}
-title: "Concept Name"
-aliases:
-  - alt-name
-  - abbreviation
+canonical_name: "Concept Name"
+aliases: []
+abbreviations: []
+known_variants: []
+known_errors: []
 sources:
   - "[[source1]]"
   - "[[source2]]"
@@ -79,10 +80,10 @@ created: YYYY-MM-DD
 updated: YYYY-MM-DD
 ---
 
-Entity naming fields follow these rules:
+Concept and entity naming fields follow these rules:
 
 - `canonical_name` is the single preferred display name and MUST be a nonempty
-  scalar string. Entity pages MUST NOT use `title`.
+  scalar string. Concept and entity pages MUST NOT use `title`.
 - `aliases` contains other established names.
 - `abbreviations` contains acronyms, initialisms, and established shortened
   forms.
@@ -95,9 +96,9 @@ Entity naming fields follow these rules:
 - Never invent, infer, normalize, deduplicate, or reclassify name values merely
   to populate a field. Add a value only when supported by source material or
   explicitly supplied by the user. Leave unknown categories as `[]`.
-- When updating an entity, preserve its `entity_id`, existing naming values,
-  and value order unless correcting a demonstrated error. Keep exactly one
-  `canonical_name` and never reintroduce `title`.
+- When updating a concept or entity, preserve its stable ID, existing naming
+  values, and value order unless correcting a demonstrated error. Keep exactly
+  one `canonical_name` and never reintroduce `title`.
 
 ### Comparison Pages (wiki/comparisons/)
 ---

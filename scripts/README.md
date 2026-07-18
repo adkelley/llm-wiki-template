@@ -310,10 +310,10 @@ is permanent and is not changed merely because a page is renamed or moved.
 - Invalid frontmatter and duplicate IDs block all writes.
 - A second run should report `pending=0`.
 
-### Migration 002: Entity Naming Schema
+### Migration 002: Entity and Concept Naming Schema
 
-After Migration 001, run `scripts/wiki/migrate_v2.py` to upgrade only entity
-pages under `wiki/entities/**/*.md`:
+After Migration 001, run `scripts/wiki/migrate_v2.py` to upgrade entity and
+concept pages under `wiki/entities/**/*.md` and `wiki/concepts/**/*.md`:
 
 ```yaml
 title: "Acme Corporation"
@@ -345,9 +345,11 @@ python3 scripts/wiki/migrate_v2.py --wiki-dir wiki --apply --json
   nonempty scalar string per item; populated inline lists are not supported.
 - The migration performs no inference, lookup, normalization, deduplication, or
   recategorization of names.
+- Existing concept aliases remain aliases; they are not reclassified as
+  abbreviations or variants.
 - Malformed frontmatter, duplicate fields, invalid names, or malformed name
   lists block every write.
-- Non-entity pages remain unchanged, and a second run reports `pending=0`.
+- Other page types remain unchanged, and a second run reports `pending=0`.
 
 ## Claude Code
 
