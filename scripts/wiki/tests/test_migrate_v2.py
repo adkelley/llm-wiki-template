@@ -101,6 +101,171 @@ class MigrateV2Tests(unittest.TestCase):
         path.write_text(newline.join(lines), encoding="utf-8", newline="")
         return path
 
+    def write_source_page(
+        self,
+        *frontmatter_lines: str,
+        filename: str = "article.md",
+        body_lines: tuple[str, ...] = (),
+        newline: str = "\n",
+    ) -> Path:
+        sources_dir = self.wiki_dir / "sources"
+        sources_dir.mkdir(parents=True, exist_ok=True)
+
+        path = sources_dir / filename
+        lines = [
+            "---",
+            "type: source",
+            f"source_id: source:{path.stem}",
+            *frontmatter_lines,
+            "---",
+            "",
+            *body_lines,
+        ]
+        path.write_text(newline.join(lines), encoding="utf-8", newline="")
+        return path
+
+    def test_render_source_renames_author_to_attribution(self) -> None:
+        self.entities_dir.mkdir()
+        source_path = self.write_source_page('author: "John Smith"')
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        source_plan = next(
+            page for page in migration.pages if page.path == source_path
+        )
+        rendered = migrate_v2.render_page(source_plan)
+
+        self.assertIn('attribution: "John Smith"', rendered)
+        self.assertNotIn('\nauthor: "John Smith"', rendered)
+
+    def test_build_plan_rejects_invalid_source_attribution(self) -> None:
+        invalid_values = (
+            ("", "attribution must not be empty"),
+            ("null", "attribution must not be null"),
+            ("[]", "attribution must be a scalar"),
+        )
+
+        for value, expected_error in invalid_values:
+            with self.subTest(value=value):
+                self.entities_dir.mkdir(exist_ok=True)
+                source_path = self.write_source_page(f"attribution: {value}")
+
+                migration = migrate_v2.build_migration_plan(self.entities_dir)
+                source_plan = next(
+                    page for page in migration.pages if page.path == source_path
+                )
+
+                self.assertFalse(migration.is_valid)
+                self.assertFalse(source_plan.needs_change)
+                self.assertTrue(
+                    any(expected_error in error for error in source_plan.errors)
+                )
+
+    def test_render_source_prefers_existing_attribution(self) -> None:
+        self.entities_dir.mkdir()
+        source_path = self.write_source_page(
+            'author: "Old Author"',
+            'attribution: "Research Team"',
+        )
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        source_plan = next(
+            page for page in migration.pages if page.path == source_path
+        )
+        rendered = migrate_v2.render_page(source_plan)
+
+        self.assertTrue(migration.is_valid)
+        self.assertEqual(source_plan.proposed_attribution, '"Research Team"')
+        self.assertEqual(rendered.count("\nattribution:"), 1)
+        self.assertIn('attribution: "Research Team"', rendered)
+        self.assertNotIn('\nauthor: "Old Author"', rendered)
+        self.assertNotIn('attribution: "Old Author"', rendered)
+
+    def test_attribution_only_source_does_not_need_migration(self) -> None:
+        self.entities_dir.mkdir()
+        source_path = self.write_source_page(
+            'attribution: "Garibaldi Capital Advisors"'
+        )
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        source_plan = next(
+            page for page in migration.pages if page.path == source_path
+        )
+
+        self.assertTrue(migration.is_valid)
+        self.assertFalse(source_plan.needs_change)
+        self.assertEqual(source_plan.proposed_attribution, '"Garibaldi Capital Advisors"')
+        self.assertEqual(migrate_v2.apply_migration(migration), ())
+
+    def test_build_plan_rejects_invalid_legacy_author(self) -> None:
+        invalid_values = (
+            ("", "author must not be empty"),
+            ("null", "author must not be null"),
+            ("[]", "author must be a scalar"),
+        )
+
+        for value, expected_error in invalid_values:
+            with self.subTest(value=value):
+                self.entities_dir.mkdir(exist_ok=True)
+                source_path = self.write_source_page(f"author: {value}")
+
+                migration = migrate_v2.build_migration_plan(self.entities_dir)
+                source_plan = next(
+                    page for page in migration.pages if page.path == source_path
+                )
+
+                self.assertFalse(migration.is_valid)
+                self.assertFalse(source_plan.needs_change)
+                self.assertTrue(
+                    any(expected_error in error for error in source_plan.errors)
+                )
+
+    def test_source_apply_preserves_metadata_body_crlf_and_is_idempotent(self) -> None:
+        self.entities_dir.mkdir()
+        source_path = self.write_source_page(
+            'title: "Market Notes"',
+            "slug: summary-market-notes",
+            "source_file: raw/market-notes.md",
+            'author: "Garibaldi Capital Advisors (Brendan Lochead, drafted with Claude)"',
+            "date_published: 2026-07-18",
+            "date_ingested: 2026-07-19",
+            "confidence: high",
+            body_lines=("# Market Notes", "", "Analysis with café text."),
+            newline="\r\n",
+        )
+
+        first_plan = migrate_v2.build_migration_plan(self.entities_dir)
+        first_changed = migrate_v2.apply_migration(first_plan)
+        after_first_apply = source_path.read_bytes()
+        second_plan = migrate_v2.build_migration_plan(self.entities_dir)
+
+        self.assertEqual(first_changed, (source_path,))
+        self.assertIn(
+            b'attribution: "Garibaldi Capital Advisors (Brendan Lochead, drafted with Claude)"\r\n',
+            after_first_apply,
+        )
+        self.assertIn(b"date_published: 2026-07-18\r\n", after_first_apply)
+        self.assertIn("Analysis with café text.".encode(), after_first_apply)
+        self.assertNotIn(b"\n", after_first_apply.replace(b"\r\n", b""))
+        self.assertEqual(migrate_v2.apply_migration(second_plan), ())
+        self.assertEqual(source_path.read_bytes(), after_first_apply)
+
+    def test_invalid_source_prevents_all_migration_writes(self) -> None:
+        entity_path = self.write_entity_page('title: "Acme Corporation"')
+        concept_path = self.write_concept_page('title: "Knowledge Graph"')
+        source_path = self.write_source_page("attribution: []")
+        originals = {
+            path: path.read_bytes()
+            for path in (entity_path, concept_path, source_path)
+        }
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+
+        self.assertFalse(migration.is_valid)
+        with self.assertRaisesRegex(ValueError, "invalid migration"):
+            migrate_v2.apply_migration(migration)
+        for path, original in originals.items():
+            self.assertEqual(path.read_bytes(), original)
+
     def test_build_plan_finds_entity_and_concept_pages(self) -> None:
         entity_path = self.write_entity_page('title: "Acme Corporation"')
         concept_path = self.write_concept_page('title: "Knowledge Graph"')
@@ -286,11 +451,12 @@ class MigrateV2Tests(unittest.TestCase):
         for path, original in originals.items():
             self.assertEqual(path.read_bytes(), original)
 
-    def test_cli_description_mentions_entity_and_concept_pages(self) -> None:
+    def test_cli_description_mentions_all_supported_page_types(self) -> None:
         parser = migrate_v2.build_arg_parser()
 
         self.assertIn("entit", parser.description.casefold())
         self.assertIn("concept", parser.description.casefold())
+        self.assertIn("source", parser.description.casefold())
 
     def test_apply_migration_writes_entity_and_concept_pages(self) -> None:
         entity_path = self.write_entity_page('title: "Acme Corporation"')
@@ -333,7 +499,7 @@ class MigrateV2Tests(unittest.TestCase):
         self.assertEqual(second_changed, ())
         self.assertEqual(concept_path.read_bytes(), after_first_apply)
 
-    def test_module_description_mentions_entity_and_concept_pages(self) -> None:
+    def test_module_description_explains_all_migrations(self) -> None:
         module_docstring = migrate_v2.__doc__
         if module_docstring is None:
             self.fail("migrate_v2 must have a module docstring")
@@ -341,6 +507,9 @@ class MigrateV2Tests(unittest.TestCase):
 
         self.assertIn("entit", description)
         self.assertIn("concept", description)
+        self.assertIn("source", description)
+        self.assertIn("author", description)
+        self.assertIn("attribution", description)
 
     def test_render_page_renames_title_to_canonical_name(self) -> None:
         entities_dir = self.wiki_dir / "entities"
@@ -805,23 +974,23 @@ class MigrateV2Tests(unittest.TestCase):
         self,
     ) -> None:
         self.entities_dir.mkdir()
-        sources_dir = self.wiki_dir / "sources"
-        sources_dir.mkdir()
-        source_path = sources_dir / "article.md"
-        source_path.write_text(
+        comparisons_dir = self.wiki_dir / "comparisons"
+        comparisons_dir.mkdir()
+        comparison_path = comparisons_dir / "options.md"
+        comparison_path.write_text(
             "\n".join(
                 [
                     "---",
-                    "type: source",
-                    "source_id: source:article",
-                    'title: "Article"',
+                    "type: comparison",
+                    "comparison_id: comparison:options",
+                    'title: "Comparing Options"',
                     "---",
                     "",
                 ]
             ),
             encoding="utf-8",
         )
-        original = source_path.read_bytes()
+        original = comparison_path.read_bytes()
 
         migration = migrate_v2.build_migration_plan(self.entities_dir)
         changed = migrate_v2.apply_migration(migration)
@@ -829,7 +998,7 @@ class MigrateV2Tests(unittest.TestCase):
         self.assertTrue(migration.is_valid)
         self.assertEqual(migration.pages, ())
         self.assertEqual(changed, ())
-        self.assertEqual(source_path.read_bytes(), original)
+        self.assertEqual(comparison_path.read_bytes(), original)
 
     def test_build_plan_rejects_yaml_null_canonical_names(self) -> None:
         for null_value in ("null", "Null", "NULL", "~"):

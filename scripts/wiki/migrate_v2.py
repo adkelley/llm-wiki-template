@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 
 """
-Migrate entity and concept page frontmatter from the legacy title schema to naming schema v2.
+Migrate source, concept, and entity frontmatter to schema v2.
 
-The migration recursively inspects Markdown files under ``wiki/entities`` and ``wiki/concepts``.
-It replaces ``title`` with ``canonical_name`` and adds any missing entity-name
-list fields: ``aliases``, ``abbreviations``, ``known_variants``, and
+The migration recursively inspects Markdown files under ``wiki/sources``,
+``wiki/concepts``, and ``wiki/entities``. For source pages, it replaces
+``author`` with the scalar ``attribution`` field. For concept and entity pages,
+it replaces ``title`` with ``canonical_name`` and adds any missing name-list
+fields: ``aliases``, ``abbreviations``, ``known_variants``, and
 ``known_errors``.
 
 Preview mode validates and renders all pending changes without writing files.
 Apply mode writes changes only after the complete migration plan is valid and
 every pending page renders successfully. Existing name-list values, unrelated
 frontmatter, Markdown bodies, UTF-8 encoding, and LF or CRLF line endings are
-preserved. The migration performs no inference, lookup, or normalization of
-entity names.
+preserved. The migration performs no inference, lookup, normalization, or
+reclassification of attribution or name values.
 """
 
 import argparse
@@ -26,6 +28,10 @@ from pathlib import Path
 @dataclass(frozen=True)
 class PagePlan:
     path: Path
+    page_type: str
+    existing_author: str | None
+    existing_attribution: str | None
+    proposed_attribution: str | None
     existing_title: str | None
     existing_canonical_name: str | None
     proposed_canonical_name: str | None
@@ -34,6 +40,8 @@ class PagePlan:
 
     @property
     def needs_change(self) -> bool:
+        if self.page_type == "source":
+            return not self.errors and self.existing_author is not None
         return not self.errors and (
             self.existing_title is not None
             or self.existing_canonical_name is None
@@ -70,7 +78,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         prog="migrate_v2",
         description=(
             "A preview-first migration that upgrades "
-            "`wiki/entities/**/*.md` and `wiki/concepts/**/*.md`."
+            "`wiki/entities/**/*.md`, `wiki/concepts/**/*.md`, "
+            "and `wiki/sources/**/*.md`."
         ),
     )
     parser.add_argument(
@@ -225,6 +234,12 @@ def plan_page(path: Path, expected_type: str) -> PagePlan:
         frontmatter_valid = False
         errors.append(str(error))
 
+    page_type = frontmatter.get("type", expected_type)
+
+    existing_author = None
+    existing_attribution = None
+    proposed_attribution = None
+
     existing_title = None
     existing_canonical_name = None
     proposed_canonical_name = None
@@ -235,53 +250,78 @@ def plan_page(path: Path, expected_type: str) -> PagePlan:
             errors.append(
                 f"{path}: expected type: {expected_type}, found {actual_type!r}"
             )
-
-        existing_title = frontmatter.get("title")
-        if is_empty_value(existing_title):
-            errors.append(f"{path}: title must not be empty")
-
-        if is_null_value(existing_title):
-            errors.append(f"{path}: title must not be null")
-
-        if is_collection_value(existing_title):
-            errors.append(f"{path}: title must be a scalar")
-
-        existing_canonical_name = frontmatter.get("canonical_name")
-        if is_empty_value(existing_canonical_name):
-            errors.append(f"{path}: canonical_name must not be empty")
-
-        if is_null_value(existing_canonical_name):
-            errors.append(f"{path}: canonical_name must not be null")
-
-        if is_collection_value(existing_canonical_name):
-            errors.append(f"{path}: canonical_name must be a scalar")
-
-        if existing_title is None and existing_canonical_name is None:
-            errors.append(f"{path}: missing title or canonical_name")
-        elif existing_canonical_name is None and existing_title is not None:
-            proposed_canonical_name = existing_title
+        if page_type == "source":
+            existing_author = frontmatter.get("author")
+            if is_empty_value(existing_author):
+                errors.append(f"{path}: author must not be empty")
+            if is_null_value(existing_author):
+                errors.append(f"{path}: author must not be null")
+            if is_collection_value(existing_author):
+                errors.append(f"{path}: author must be a scalar")
+            existing_attribution = frontmatter.get("attribution")
+            if is_empty_value(existing_attribution):
+                errors.append(f"{path}: attribution must not be empty")
+            if is_null_value(existing_attribution):
+                errors.append(f"{path}: attribution must not be null")
+            if is_collection_value(existing_attribution):
+                errors.append(f"{path}: attribution must be a scalar")
+            if existing_author is None and existing_attribution is None:
+                errors.append(f"{path}: missing author or attribution")
+            elif existing_attribution is None and existing_author is not None:
+                proposed_attribution = existing_author
+            else:
+                proposed_attribution = existing_attribution
         else:
-            proposed_canonical_name = existing_canonical_name
-        for name_field in NAME_FIELDS:
-            if name_field not in frontmatter:
-                missing_name_fields.append(name_field)
-                continue
+            existing_title = frontmatter.get("title")
+            if is_empty_value(existing_title):
+                errors.append(f"{path}: title must not be empty")
 
-            value = frontmatter[name_field]
-            if value == "[]":
-                continue
+            if is_null_value(existing_title):
+                errors.append(f"{path}: title must not be null")
 
-            if value == "":
-                validation_error = block_list_validation_error(path, name_field)
-                if validation_error is None:
+            if is_collection_value(existing_title):
+                errors.append(f"{path}: title must be a scalar")
+
+            existing_canonical_name = frontmatter.get("canonical_name")
+            if is_empty_value(existing_canonical_name):
+                errors.append(f"{path}: canonical_name must not be empty")
+
+            if is_null_value(existing_canonical_name):
+                errors.append(f"{path}: canonical_name must not be null")
+
+            if is_collection_value(existing_canonical_name):
+                errors.append(f"{path}: canonical_name must be a scalar")
+
+            if existing_title is None and existing_canonical_name is None:
+                errors.append(f"{path}: missing title or canonical_name")
+            elif existing_canonical_name is None and existing_title is not None:
+                proposed_canonical_name = existing_title
+            else:
+                proposed_canonical_name = existing_canonical_name
+            for name_field in NAME_FIELDS:
+                if name_field not in frontmatter:
+                    missing_name_fields.append(name_field)
                     continue
-                errors.append(f"{path}: {validation_error}")
-                continue
 
-            errors.append(f"{path}: {name_field} must be a list")
+                value = frontmatter[name_field]
+                if value == "[]":
+                    continue
+
+                if value == "":
+                    validation_error = block_list_validation_error(path, name_field)
+                    if validation_error is None:
+                        continue
+                    errors.append(f"{path}: {validation_error}")
+                    continue
+
+                errors.append(f"{path}: {name_field} must be a list")
 
     return PagePlan(
         path=path,
+        page_type=page_type,
+        existing_author=existing_author,
+        existing_attribution=existing_attribution,
+        proposed_attribution=proposed_attribution,
         existing_canonical_name=existing_canonical_name,
         proposed_canonical_name=proposed_canonical_name,
         existing_title=existing_title,
@@ -302,9 +342,11 @@ def build_migration_plan(entities_dir: Path) -> MigrationPlan:
         )
 
     concepts_dir = entities_dir.parent / "concepts"
+    sources_dir = entities_dir.parent / "sources"
     page_directories: list[tuple[Path, str]] = [
         (entities_dir, "entity"),
         (concepts_dir, "concept"),
+        (sources_dir, "source"),
     ]
     for page_dir, page_type in page_directories:
         for path in iter_pages(page_dir):
@@ -327,9 +369,63 @@ def add_missing_name_fields(
     return None
 
 
+def render_source_page(plan: PagePlan) -> str:
+    with plan.path.open("r", encoding="utf-8", newline="") as file:
+        text = file.read()
+
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\r\n") != "---":
+        raise ValueError(f"{plan.path}: missing opening frontmatter delimiter")
+
+    closing_index = None
+    for index, line in enumerate(lines[1:], start=1):
+        if line.rstrip("\r\n") == "---":
+            closing_index = index
+            break
+    if closing_index is None:
+        raise ValueError(f"{plan.path}: missing closing frontmatter delimiter")
+
+    author_index = None
+    attribution_index = None
+    for index in range(1, closing_index):
+        content = lines[index].rstrip("\r\n")
+        key, separator, _ = content.partition(":")
+        if not separator:
+            continue
+
+        key = key.strip()
+
+        if key == "author":
+            author_index = index
+        elif key == "attribution":
+            attribution_index = index
+
+    if author_index is not None:
+        author_line = lines[author_index]
+        author_content = author_line.rstrip("\r\n")
+        author_ending = author_line[len(author_content) :]
+        if attribution_index is None:
+            lines[author_index] = (
+                f"attribution: {plan.proposed_attribution}{author_ending}"
+            )
+            attribution_index = author_index
+        else:
+            del lines[author_index]
+            if attribution_index > author_index:
+                attribution_index -= 1
+
+    if attribution_index is None:
+        raise ValueError(f"{plan.path}: missing attribution in frontmatter")
+
+    return "".join(lines)
+
+
 def render_page(plan: PagePlan) -> str:
     if not plan.needs_change:
         raise ValueError(f"{plan.path}: page does not need migration")
+
+    if plan.page_type == "source":
+        return render_source_page(plan)
 
     if plan.proposed_canonical_name is None:
         raise ValueError(f"{plan.path}: no canonical name is available")
