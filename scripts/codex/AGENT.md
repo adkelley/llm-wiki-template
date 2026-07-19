@@ -27,7 +27,7 @@ source_id: source:{slug}
 title: "Article/Paper Title"
 slug: summary-{slug}
 source_file: raw/{filename}.md
-author: "Author Name"
+attribution: "Author, organization, or complete credit line"
 date_published: YYYY-MM-DD
 date_ingested: YYYY-MM-DD
 key_claims:
@@ -36,9 +36,25 @@ key_claims:
   - claim3
 related:
   - "[[concept1]]"
-  - "[[concept2]]"
+  - "[[entity1]]"
 confidence: high | medium | low
 ---
+
+Source attribution follows these rules:
+
+- `attribution` is a single, quoted scalar containing the complete credit line.
+- Preserve names, organizations, ordering, punctuation, and contribution notes
+  as presented by the source.
+- Multiple authors remain in one scalar; do not convert `attribution` into a
+  YAML list.
+- When an organization is credited with named contributors or drafting
+  assistance, preserve the complete statement.
+- Do not infer contributors, expand names, or add AI assistance unless the
+  source or user explicitly identifies it.
+
+The `related` field may contain wikilinks to both concept and entity pages.
+Preserve existing links and their order. Add relationships only when supported
+by source material or explicitly supplied by the user.
 
 ### Concept Pages (wiki/concepts/)
 ---
@@ -99,6 +115,11 @@ Concept and entity naming fields follow these rules:
 - When updating a concept or entity, preserve its stable ID, existing naming
   values, and value order unless correcting a demonstrated error. Keep exactly
   one `canonical_name` and never reintroduce `title`.
+
+The `related` field may contain wikilinks to both concept and entity pages.
+Preserve existing links and their order. Add relationships only when supported
+by source material or explicitly supplied by the user.
+
 
 ### Comparison Pages (wiki/comparisons/)
 ---

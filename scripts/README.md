@@ -310,10 +310,25 @@ is permanent and is not changed merely because a page is renamed or moved.
 - Invalid frontmatter and duplicate IDs block all writes.
 - A second run should report `pending=0`.
 
-### Migration 002: Entity and Concept Naming Schema
+### Migration 002: Source Attribution and Page Naming Schema
 
-After Migration 001, run `scripts/wiki/migrate_v2.py` to upgrade entity and
-concept pages under `wiki/entities/**/*.md` and `wiki/concepts/**/*.md`:
+After Migration 001, run `scripts/wiki/migrate_v2.py` to upgrade source,
+concept, and entity pages under `wiki/sources/**/*.md`,
+`wiki/concepts/**/*.md`, and `wiki/entities/**/*.md`.
+
+For source pages:
+
+```yaml
+author: "Author, organization, or complete credit line"
+```
+
+becomes:
+
+```yaml
+attribution: "Author, organization, or complete credit line"
+```
+
+For concept and entity pages:
 
 ```yaml
 title: "Acme Corporation"
@@ -337,6 +352,9 @@ python3 scripts/wiki/migrate_v2.py --wiki-dir wiki --apply --json
 ```
 
 - Preview is the default; `--apply` and `--json` behave as in Migration 001.
+- Existing `attribution` wins when a source page contains both `author` and
+  `attribution`; the obsolete `author` field is removed. Attribution remains a
+  single scalar and is preserved without parsing or reclassification.
 - Existing `canonical_name` wins when a page contains both `title` and
   `canonical_name`; the obsolete `title` field is removed.
 - Existing valid name-list values and their order are preserved. Missing fields
@@ -347,8 +365,8 @@ python3 scripts/wiki/migrate_v2.py --wiki-dir wiki --apply --json
   recategorization of names.
 - Existing concept aliases remain aliases; they are not reclassified as
   abbreviations or variants.
-- Malformed frontmatter, duplicate fields, invalid names, or malformed name
-  lists block every write.
+- Malformed frontmatter, duplicate fields, invalid attribution or names, or
+  malformed name lists block every write.
 - Other page types remain unchanged, and a second run reports `pending=0`.
 
 ## Claude Code
