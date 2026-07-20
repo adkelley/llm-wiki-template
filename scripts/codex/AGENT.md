@@ -4,7 +4,7 @@
 [Enter your wiki subject here example - "AI LLM Research, May 2026 -"]
 
 ## Project Structure
-- `raw/` — immutable source documents. NEVER modify any file in raw/.
+- `raw/` — immutable source documents (may be symlinks to other locations). NEVER modify any file in raw/.
 - `wiki/` — LLM-generated wiki. You own this layer entirely.
 - `wiki/index.md` — master catalog. Update on EVERY ingest.
 - `wiki/log.md` — append-only activity log. Never delete entries.
@@ -20,13 +20,28 @@ first, and request user approval before installing anything.
 ## Page Conventions
 Every wiki page MUST have YAML frontmatter. Use these schemas:
 
-### Source Summary Pages (wiki/sources/)
+### Source Summary Pages (`wiki/sources/`)
+
+Each source page represents **exactly one independently attributable source**
+(publication, communication, presentation, transcript, dataset, etc.).
+
+A source page MUST NOT summarize multiple independent sources.
+If analysis combines multiple sources, create one source page for each source
+and place the combined analysis in a synthesis page.
+
+```yaml
 ---
 type: source
 source_id: source:{slug}
-title: "Article/Paper Title"
+title: "Source Title"
 slug: summary-{slug}
-source_file: raw/{filename}.md
+source_file: "[[raw/{canonical_source}.md]]"
+renditions:
+  - "[[raw/{original}.pdf]]"
+  - "[[raw/{original}.pptx]]"
+source_type: article | paper | report | presentation | communication |
+             transcript | recording | book | documentation |
+             dataset | webpage | note | other
 attribution: "Author, organization, or complete credit line"
 date_published: YYYY-MM-DD
 date_ingested: YYYY-MM-DD
@@ -35,26 +50,119 @@ key_claims:
   - claim2
   - claim3
 related:
-  - "[[concept1]]"
   - "[[entity1]]"
+  - "[[concept1]]"
+  - "[[source1]]"
 confidence: high | medium | low
 ---
+```
 
-Source attribution follows these rules:
+#### Source identity
+
+A source page represents one intellectual work.
+
+Examples of one source:
+
+- one news article
+- one research paper
+- one PitchBook report
+- one earnings-call transcript
+- one investor presentation
+- one email
+- one meeting transcript
+
+Do **not** combine multiple independent documents into a single source page,
+even if they were ingested together or concern the same topic.
+
+#### `source_file`
+
+`source_file` identifies the canonical Markdown representation consumed by the
+wiki.
+
+There is exactly **one** `source_file` per source page.
+
+#### `renditions`
+
+`renditions` lists alternate representations of the **same source**.
+
+Examples:
+
+- original PowerPoint
+- exported PDF
+- HTML capture
+- DOCX version
+
+All renditions must represent the same intellectual work.
+
+Do **not** place unrelated documents in `renditions`.
+
+For example, these are **different sources**, not renditions:
+
+- PitchBook report
+- earnings-call transcript
+- investor presentation
+- annual report
+
+Each requires its own source page.
+
+#### Source Types
+
+Choose the source type that best describes the intellectual work, not its file
+format.
+
+| Type | Description |
+|------|-------------|
+| `article` | News article, magazine article, blog post, or other published article. |
+| `paper` | Academic paper, technical paper, white paper, or research paper. |
+| `report` | Structured analytical or informational report, including analyst reports, annual reports, market reports, and financial reports. |
+| `presentation` | Slide deck or presentation prepared for an audience, including investor decks, conference presentations, and CIMs. |
+| `communication` | Written communication such as an email, memo, letter, announcement, or press release. |
+| `transcript` | Transcript of spoken communication, including meetings, interviews, earnings calls, webinars, podcasts, and presentations. |
+| `recording` | Audio or video recording when the recording itself is the primary source. |
+| `book` | Book or book chapter. |
+| `documentation` | Product documentation, manuals, specifications, API documentation, or technical documentation. |
+| `dataset` | Structured data such as spreadsheets, CSV files, benchmark datasets, or database exports. |
+| `webpage` | A standalone webpage that is not more appropriately classified as an article or documentation. |
+| `note` | Personal, internal, or research notes. |
+| `other` | Any source that does not reasonably fit another category. |
+
+Classify based on the intellectual work rather than the file extension. For
+example, a PDF exported from PowerPoint is still a `presentation`, and an HTML
+copy of a news story is still an `article`.
+
+Examples:
+
+- Confidential Information Memorandum (CIM) → presentation
+- PitchBook Company Profile → report
+- Earnings Call Transcript → transcript
+- Investor Presentation → presentation
+- CEO Email → communication
+
+#### Attribution
 
 - `attribution` is a single, quoted scalar containing the complete credit line.
 - Preserve names, organizations, ordering, punctuation, and contribution notes
-  as presented by the source.
-- Multiple authors remain in one scalar; do not convert `attribution` into a
-  YAML list.
-- When an organization is credited with named contributors or drafting
-  assistance, preserve the complete statement.
-- Do not infer contributors, expand names, or add AI assistance unless the
-  source or user explicitly identifies it.
+  exactly as presented.
+- Multiple authors remain in one scalar.
+- Do not convert `attribution` into a YAML list.
+- Do not infer contributors or expand abbreviated credits.
 
-The `related` field may contain wikilinks to both concept and entity pages.
-Preserve existing links and their order. Add relationships only when supported
-by source material or explicitly supplied by the user.
+#### Related
+
+The `related` field may contain wikilinks to:
+
+- entity pages
+- concept pages
+- other source pages
+- synthesis pages
+- trace pages
+- contradiction pages
+- comparison pages
+
+Preserve existing links and their order.
+
+Only add relationships that are supported by the source material or explicitly
+provided by the user.
 
 ### Concept Pages (wiki/concepts/)
 ---

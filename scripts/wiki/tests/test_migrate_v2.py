@@ -137,6 +137,24 @@ class MigrateV2Tests(unittest.TestCase):
         self.assertIn('attribution: "John Smith"', rendered)
         self.assertNotIn('\nauthor: "John Smith"', rendered)
 
+    def test_render_source_wraps_plain_raw_path_in_wikilink(self) -> None:
+        self.entities_dir.mkdir()
+        source_path = self.write_source_page(
+            'attribution: "Research Team"',
+            "source_file: raw/report.md",
+        )
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        source_plan = next(
+            page for page in migration.pages if page.path == source_path
+        )
+
+        self.assertTrue(migration.is_valid)
+        self.assertTrue(source_plan.needs_change)
+        rendered = migrate_v2.render_page(source_plan)
+        self.assertIn('source_file: "[[raw/report.md]]"', rendered)
+        self.assertNotIn("\nsource_file: raw/report.md\n", rendered)
+
     def test_build_plan_rejects_invalid_source_attribution(self) -> None:
         invalid_values = (
             ("", "attribution must not be empty"),

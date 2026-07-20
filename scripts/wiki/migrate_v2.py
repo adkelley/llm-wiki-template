@@ -29,6 +29,8 @@ from pathlib import Path
 class PagePlan:
     path: Path
     page_type: str
+    existing_source_file: str | None
+    proposed_source_file: str | None
     existing_author: str | None
     existing_attribution: str | None
     proposed_attribution: str | None
@@ -41,7 +43,10 @@ class PagePlan:
     @property
     def needs_change(self) -> bool:
         if self.page_type == "source":
-            return not self.errors and self.existing_author is not None
+            return not self.errors and (
+                self.existing_author is not None
+                or self.existing_source_file != self.proposed_source_file
+            )
         return not self.errors and (
             self.existing_title is not None
             or self.existing_canonical_name is None
@@ -236,6 +241,9 @@ def plan_page(path: Path, expected_type: str) -> PagePlan:
 
     page_type = frontmatter.get("type", expected_type)
 
+    existing_source_file = None
+    proposed_source_file = None
+
     existing_author = None
     existing_attribution = None
     proposed_attribution = None
@@ -251,6 +259,21 @@ def plan_page(path: Path, expected_type: str) -> PagePlan:
                 f"{path}: expected type: {expected_type}, found {actual_type!r}"
             )
         if page_type == "source":
+            existing_source_file = frontmatter.get("source_file")
+            if existing_source_file is not None:
+                source_value = existing_source_file
+                if (
+                    len(source_value) >= 2
+                    and source_value[0] == source_value[-1]
+                    and source_value[0] in ("'", '"')
+                ):
+                    source_value = source_value[1:-1]
+
+                if source_value.startswith("[[") and source_value.endswith("]]"):
+                    proposed_source_file = existing_source_file
+                else:
+                    proposed_source_file = f'"[[{source_value}]]"'
+
             existing_author = frontmatter.get("author")
             if is_empty_value(existing_author):
                 errors.append(f"{path}: author must not be empty")
@@ -265,6 +288,7 @@ def plan_page(path: Path, expected_type: str) -> PagePlan:
                 errors.append(f"{path}: attribution must not be null")
             if is_collection_value(existing_attribution):
                 errors.append(f"{path}: attribution must be a scalar")
+
             if existing_author is None and existing_attribution is None:
                 errors.append(f"{path}: missing author or attribution")
             elif existing_attribution is None and existing_author is not None:
@@ -319,6 +343,8 @@ def plan_page(path: Path, expected_type: str) -> PagePlan:
     return PagePlan(
         path=path,
         page_type=page_type,
+        existing_source_file=existing_source_file,
+        proposed_source_file=proposed_source_file,
         existing_author=existing_author,
         existing_attribution=existing_attribution,
         proposed_attribution=proposed_attribution,
@@ -387,6 +413,7 @@ def render_source_page(plan: PagePlan) -> str:
 
     author_index = None
     attribution_index = None
+    source_file_index = None
     for index in range(1, closing_index):
         content = lines[index].rstrip("\r\n")
         key, separator, _ = content.partition(":")
@@ -399,6 +426,16 @@ def render_source_page(plan: PagePlan) -> str:
             author_index = index
         elif key == "attribution":
             attribution_index = index
+        elif key == "source_file":
+            source_file_index = index
+
+    if source_file_index is not None:
+        source_line = lines[source_file_index]
+        source_content = source_line.rstrip("\r\n")
+        source_ending = source_line[len(source_content) :]
+        lines[source_file_index] = (
+            f"source_file: {plan.proposed_source_file}{source_ending}"
+        )
 
     if author_index is not None:
         author_line = lines[author_index]
