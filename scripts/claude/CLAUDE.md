@@ -41,7 +41,7 @@ renditions:
   - "[[raw/{original}.pptx]]"
 source_type: article | paper | report | presentation | communication |
              transcript | recording | book | documentation |
-             dataset | webpage | note | other
+             dataset | webpage | note | other | unknown
 attribution: "Author, organization, or complete credit line"
 date_published: YYYY-MM-DD
 date_ingested: YYYY-MM-DD
@@ -80,6 +80,8 @@ even if they were ingested together or concern the same topic.
 wiki.
 
 There is exactly **one** `source_file` per source page.
+Store it as a quoted wikilink into `raw/`, for example:
+`source_file: "[[raw/example.md]]"`. Do not store it as a plain path.
 
 #### `renditions`
 
@@ -125,6 +127,11 @@ format.
 | `webpage` | A standalone webpage that is not more appropriately classified as an article or documentation. |
 | `note` | Personal, internal, or research notes. |
 | `other` | Any source that does not reasonably fit another category. |
+| `unknown` | Temporary value for a legacy source that has not yet been assessed. |
+
+Replace `unknown` after reviewing the intellectual work. Do not infer a source
+type from its filename or extension alone. `other` means the source was
+reviewed and does not fit another category; it does not mean unreviewed.
 
 Classify based on the intellectual work rather than the file extension. For
 example, a PDF exported from PowerPoint is still a `presentation`, and an HTML

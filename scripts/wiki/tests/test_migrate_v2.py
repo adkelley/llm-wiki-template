@@ -107,15 +107,34 @@ class MigrateV2Tests(unittest.TestCase):
         filename: str = "article.md",
         body_lines: tuple[str, ...] = (),
         newline: str = "\n",
+        include_source_schema: bool = True,
     ) -> Path:
         sources_dir = self.wiki_dir / "sources"
         sources_dir.mkdir(parents=True, exist_ok=True)
 
         path = sources_dir / filename
+        source_schema_lines = (
+            [
+                'source_file: "[[raw/article.md]]"',
+                "renditions: []",
+                "source_type: unknown",
+            ]
+            if include_source_schema
+            else []
+        )
+        supplied_fields = {
+            line.partition(":")[0].strip() for line in frontmatter_lines
+        }
+        source_schema_lines = [
+            line
+            for line in source_schema_lines
+            if line.partition(":")[0].strip() not in supplied_fields
+        ]
         lines = [
             "---",
             "type: source",
             f"source_id: source:{path.stem}",
+            *source_schema_lines,
             *frontmatter_lines,
             "---",
             "",
@@ -123,6 +142,147 @@ class MigrateV2Tests(unittest.TestCase):
         ]
         path.write_text(newline.join(lines), encoding="utf-8", newline="")
         return path
+
+    def test_render_source_adds_missing_renditions_and_source_type(self) -> None:
+        self.entities_dir.mkdir()
+        source_path = self.write_source_page(
+            'source_file: "[[raw/report.md]]"',
+            'attribution: "Research Team"',
+            include_source_schema=False,
+        )
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        source_plan = next(
+            page for page in migration.pages if page.path == source_path
+        )
+        rendered = migrate_v2.render_page(source_plan)
+
+        self.assertTrue(migration.is_valid)
+        self.assertEqual(
+            source_plan.missing_source_fields,
+            ("renditions", "source_type"),
+        )
+        self.assertIn(
+            '\n'.join(
+                [
+                    'source_file: "[[raw/report.md]]"',
+                    "renditions: []",
+                    "source_type: unknown",
+                ]
+            ),
+            rendered,
+        )
+
+    def test_source_schema_backfill_preserves_crlf_and_is_idempotent(self) -> None:
+        self.entities_dir.mkdir()
+        source_path = self.write_source_page(
+            'source_file: "[[raw/report.md]]"',
+            'attribution: "Research Team"',
+            body_lines=("# Report", "", "Body text."),
+            newline="\r\n",
+            include_source_schema=False,
+        )
+
+        first_plan = migrate_v2.build_migration_plan(self.entities_dir)
+        self.assertEqual(migrate_v2.apply_migration(first_plan), (source_path,))
+        migrated = source_path.read_bytes()
+        second_plan = migrate_v2.build_migration_plan(self.entities_dir)
+
+        self.assertIn(b"renditions: []\r\n", migrated)
+        self.assertIn(b"source_type: unknown\r\n", migrated)
+        self.assertNotIn(b"\n", migrated.replace(b"\r\n", b""))
+        self.assertTrue(second_plan.is_valid)
+        self.assertEqual(migrate_v2.apply_migration(second_plan), ())
+        self.assertEqual(source_path.read_bytes(), migrated)
+
+    def test_source_preserves_populated_renditions_and_allowed_type(self) -> None:
+        self.entities_dir.mkdir()
+        source_path = self.write_source_page(
+            'source_file: "[[raw/report.md]]"',
+            "renditions:",
+            '  - "[[raw/report.pdf]]"',
+            '  - "[[raw/report.pptx]]"',
+            "source_type: presentation",
+            'attribution: "Research Team"',
+            include_source_schema=False,
+        )
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        source_plan = next(
+            page for page in migration.pages if page.path == source_path
+        )
+
+        self.assertTrue(migration.is_valid)
+        self.assertEqual(source_plan.missing_source_fields, ())
+        self.assertFalse(source_plan.needs_change)
+        self.assertEqual(migrate_v2.apply_migration(migration), ())
+
+    def test_source_adds_each_missing_schema_field_independently(self) -> None:
+        cases = (
+            (("renditions: []",), ("source_type",), "source_type: unknown"),
+            (("source_type: report",), ("renditions",), "renditions: []"),
+        )
+        for index, (existing, missing, expected) in enumerate(cases):
+            with self.subTest(existing=existing):
+                self.entities_dir.mkdir(exist_ok=True)
+                source_path = self.write_source_page(
+                    'source_file: "[[raw/report.md]]"',
+                    *existing,
+                    'attribution: "Research Team"',
+                    filename=f"article-{index}.md",
+                    include_source_schema=False,
+                )
+                migration = migrate_v2.build_migration_plan(self.entities_dir)
+                source_plan = next(
+                    page for page in migration.pages if page.path == source_path
+                )
+                self.assertEqual(source_plan.missing_source_fields, missing)
+                self.assertIn(expected, migrate_v2.render_page(source_plan))
+
+    def test_source_rejects_invalid_new_schema_fields(self) -> None:
+        cases = (
+            (("renditions: not-a-list", "source_type: report"), "renditions"),
+            (("renditions:", "source_type: report"), "renditions"),
+            (("renditions:", "  -", "source_type: report"), "renditions"),
+            (("renditions: []", "source_type: magazine"), "source_type"),
+        )
+        for index, (fields, expected_error) in enumerate(cases):
+            with self.subTest(fields=fields):
+                self.entities_dir.mkdir(exist_ok=True)
+                source_path = self.write_source_page(
+                    'source_file: "[[raw/report.md]]"',
+                    *fields,
+                    'attribution: "Research Team"',
+                    filename=f"invalid-{index}.md",
+                    include_source_schema=False,
+                )
+                migration = migrate_v2.build_migration_plan(self.entities_dir)
+                source_plan = next(
+                    page for page in migration.pages if page.path == source_path
+                )
+                self.assertFalse(migration.is_valid)
+                self.assertFalse(source_plan.needs_change)
+                self.assertTrue(
+                    any(expected_error in error for error in source_plan.errors)
+                )
+
+    def test_source_accepts_every_documented_source_type(self) -> None:
+        self.entities_dir.mkdir()
+        for source_type in sorted(migrate_v2.SOURCE_TYPES):
+            source_path = self.write_source_page(
+                'source_file: "[[raw/report.md]]"',
+                "renditions: []",
+                f"source_type: {source_type}",
+                'attribution: "Research Team"',
+                filename=f"{source_type}.md",
+                include_source_schema=False,
+            )
+            migration = migrate_v2.build_migration_plan(self.entities_dir)
+            source_plan = next(
+                page for page in migration.pages if page.path == source_path
+            )
+            self.assertTrue(migration.is_valid)
+            self.assertFalse(source_plan.needs_change)
 
     def test_render_source_renames_author_to_attribution(self) -> None:
         self.entities_dir.mkdir()

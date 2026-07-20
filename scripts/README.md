@@ -320,12 +320,16 @@ For source pages:
 
 ```yaml
 author: "Author, organization, or complete credit line"
+source_file: raw/report.md
 ```
 
 becomes:
 
 ```yaml
 attribution: "Author, organization, or complete credit line"
+source_file: "[[raw/report.md]]"
+renditions: []
+source_type: unknown
 ```
 
 For concept and entity pages:
@@ -355,6 +359,13 @@ python3 scripts/wiki/migrate_v2.py --wiki-dir wiki --apply --json
 - Existing `attribution` wins when a source page contains both `author` and
   `attribution`; the obsolete `author` field is removed. Attribution remains a
   single scalar and is preserved without parsing or reclassification.
+- Plain scalar `source_file` paths become quoted wikilinks. Existing wikilinks
+  are preserved.
+- Missing `renditions` fields receive `renditions: []`. Existing empty or
+  populated block lists are preserved; malformed lists block every write.
+- Missing `source_type` fields receive `source_type: unknown`. Existing values
+  must use the documented enum. Migration does not infer a type from file
+  extensions or source content; `unknown` is replaced after semantic review.
 - Existing `canonical_name` wins when a page contains both `title` and
   `canonical_name`; the obsolete `title` field is removed.
 - Existing valid name-list values and their order are preserved. Missing fields
