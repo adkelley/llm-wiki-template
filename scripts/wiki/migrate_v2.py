@@ -5,10 +5,11 @@ Migrate source, concept, and entity frontmatter to schema v2.
 
 The migration recursively inspects Markdown files under ``wiki/sources``,
 ``wiki/concepts``, and ``wiki/entities``. For source pages, it replaces
-``author`` with the scalar ``attribution`` field. For concept and entity pages,
-it replaces ``title`` with ``canonical_name`` and adds any missing name-list
-fields: ``aliases``, ``abbreviations``, ``known_variants``, and
-``known_errors``.
+``author`` with the scalar ``attribution`` field, links plain ``source_file``
+paths, and adds missing ``renditions`` and ``source_type`` fields without
+inferring their values. For concept and entity pages, it replaces ``title``
+with ``canonical_name`` and adds any missing name-list fields: ``aliases``,
+``abbreviations``, ``known_variants``, and ``known_errors``.
 
 Preview mode validates and renders all pending changes without writing files.
 Apply mode writes changes only after the complete migration plan is valid and
@@ -31,6 +32,7 @@ class PagePlan:
     page_type: str
     existing_source_file: str | None
     proposed_source_file: str | None
+    missing_source_fields: tuple[str, ...]
     existing_author: str | None
     existing_attribution: str | None
     proposed_attribution: str | None
@@ -46,6 +48,7 @@ class PagePlan:
             return not self.errors and (
                 self.existing_author is not None
                 or self.existing_source_file != self.proposed_source_file
+                or bool(self.missing_source_fields)
             )
         return not self.errors and (
             self.existing_title is not None
@@ -69,6 +72,25 @@ NAME_FIELDS = (
     "abbreviations",
     "known_variants",
     "known_errors",
+)
+
+SOURCE_TYPES = frozenset(
+    {
+        "article",
+        "paper",
+        "report",
+        "presentation",
+        "communication",
+        "transcript",
+        "recording",
+        "book",
+        "documentation",
+        "dataset",
+        "webpage",
+        "note",
+        "other",
+        "unknown",
+    }
 )
 
 EMPTY_VALUES = (
@@ -227,9 +249,16 @@ def is_null_value(value: str | None) -> bool:
     return stripped == "~" or stripped.casefold() == "null"
 
 
+def unquote_scalar(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+        return value[1:-1]
+    return value
+
+
 def plan_page(path: Path, expected_type: str) -> PagePlan:
     errors: list[str] = []
     missing_name_fields: list[str] = []
+    missing_source_fields: list[str] = []
 
     frontmatter_valid = True
     try:
@@ -273,6 +302,32 @@ def plan_page(path: Path, expected_type: str) -> PagePlan:
                     proposed_source_file = existing_source_file
                 else:
                     proposed_source_file = f'"[[{source_value}]]"'
+
+            renditions = frontmatter.get("renditions")
+            if renditions is None:
+                missing_source_fields.append("renditions")
+            elif renditions == "[]":
+                pass
+            elif renditions == "":
+                validation_error = block_list_validation_error(path, "renditions")
+                if validation_error is not None:
+                    errors.append(f"{path}: {validation_error}")
+            else:
+                errors.append(f"{path}: renditions must be a list")
+
+            source_type = frontmatter.get("source_type")
+            if source_type is None:
+                missing_source_fields.append("source_type")
+            elif (
+                is_empty_value(source_type)
+                or is_null_value(source_type)
+                or is_collection_value(source_type)
+                or unquote_scalar(source_type) not in SOURCE_TYPES
+            ):
+                errors.append(
+                    f"{path}: source_type must be one of: "
+                    + ", ".join(sorted(SOURCE_TYPES))
+                )
 
             existing_author = frontmatter.get("author")
             if is_empty_value(existing_author):
@@ -345,6 +400,7 @@ def plan_page(path: Path, expected_type: str) -> PagePlan:
         page_type=page_type,
         existing_source_file=existing_source_file,
         proposed_source_file=proposed_source_file,
+        missing_source_fields=tuple(missing_source_fields),
         existing_author=existing_author,
         existing_attribution=existing_attribution,
         proposed_attribution=proposed_attribution,
@@ -393,6 +449,18 @@ def add_missing_name_fields(
         lines.insert(insert_index, f"{field}: []{ending}")
         insert_index += 1
     return None
+
+
+def add_missing_source_fields(
+    lines: list[str], insert_index: int, missing_fields: tuple[str, ...], ending: str
+) -> None:
+    values = {
+        "renditions": "[]",
+        "source_type": "unknown",
+    }
+    for field in missing_fields:
+        lines.insert(insert_index, f"{field}: {values[field]}{ending}")
+        insert_index += 1
 
 
 def render_source_page(plan: PagePlan) -> str:
@@ -450,6 +518,36 @@ def render_source_page(plan: PagePlan) -> str:
             del lines[author_index]
             if attribution_index > author_index:
                 attribution_index -= 1
+
+    if plan.missing_source_fields:
+        closing_index = next(
+            index
+            for index, line in enumerate(lines[1:], start=1)
+            if line.rstrip("\r\n") == "---"
+        )
+        source_file_index = next(
+            (
+                index
+                for index in range(1, closing_index)
+                if lines[index].partition(":")[0].strip() == "source_file"
+            ),
+            None,
+        )
+        insert_index = (
+            source_file_index + 1
+            if source_file_index is not None
+            else closing_index
+        )
+        reference_index = source_file_index if source_file_index is not None else 0
+        reference_line = lines[reference_index]
+        reference_content = reference_line.rstrip("\r\n")
+        ending = reference_line[len(reference_content) :] or "\n"
+        add_missing_source_fields(
+            lines,
+            insert_index,
+            plan.missing_source_fields,
+            ending,
+        )
 
     if attribution_index is None:
         raise ValueError(f"{plan.path}: missing attribution in frontmatter")
