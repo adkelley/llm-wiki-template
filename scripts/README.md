@@ -310,11 +310,11 @@ is permanent and is not changed merely because a page is renamed or moved.
 - Invalid frontmatter and duplicate IDs block all writes.
 - A second run should report `pending=0`.
 
-### Migration 002: Source Attribution and Page Naming Schema
+### Migration 002: Current Wiki Schema and Directory Structure
 
 After Migration 001, run `scripts/wiki/migrate_v2.py` to upgrade source,
-concept, and entity pages under `wiki/sources/**/*.md`,
-`wiki/concepts/**/*.md`, and `wiki/entities/**/*.md`.
+concept, entity, comparison, synthesis, trace, and contradiction-resolution
+pages to the current schema and create the required task directories.
 
 For source pages:
 
@@ -376,9 +376,19 @@ python3 scripts/wiki/migrate_v2.py --wiki-dir wiki --apply --json
   recategorization of names.
 - Existing concept aliases remain aliases; they are not reclassified as
   abbreviations or variants.
+- Comparison, synthesis, and trace pages replace `filed_from_query` with
+  `origin`, receive the current status and relationship fields, and preserve
+  existing valid values. Missing semantic values use conservative defaults.
+- Legacy trace `concept` values supply the new title and initial subject, and
+  scalar ingest ranges become `start`/`end` mappings.
+- Contradiction-resolution pages already under
+  `wiki/tasks/contradiction-resolutions/` are validated and receive missing
+  stable IDs. Legacy `wiki/contradictions/` content is not moved.
+- Apply mode creates `.gitkeep` files for empty or absent `wiki/traces/` and
+  `wiki/tasks/contradiction-resolutions/` directories.
 - Malformed frontmatter, duplicate fields, invalid attribution or names, or
-  malformed name lists block every write.
-- Other page types remain unchanged, and a second run reports `pending=0`.
+  invalid work/task schemas block every write.
+- A second run reports `pending=0`.
 
 ## Claude Code
 

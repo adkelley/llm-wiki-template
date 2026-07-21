@@ -49,6 +49,12 @@ class MigrateV2Tests(unittest.TestCase):
         self.wiki_dir = Path(self.temporary_directory.name) / "wiki"
         self.wiki_dir.mkdir()
         self.entities_dir = self.wiki_dir / "entities"
+        for directory in (
+            self.wiki_dir / "traces",
+            self.wiki_dir / "tasks" / "contradiction-resolutions",
+        ):
+            directory.mkdir(parents=True)
+            (directory / ".gitkeep").write_bytes(b"")
 
     def write_entity_page(
         self,
@@ -141,6 +147,55 @@ class MigrateV2Tests(unittest.TestCase):
             *body_lines,
         ]
         path.write_text(newline.join(lines), encoding="utf-8", newline="")
+        return path
+
+    def write_work_page(
+        self,
+        page_type: str,
+        *frontmatter_lines: str,
+        filename: str | None = None,
+        body_lines: tuple[str, ...] = (),
+        newline: str = "\n",
+    ) -> Path:
+        directory = self.wiki_dir / {
+            "comparison": "comparisons",
+            "synthesis": "syntheses",
+            "trace": "traces",
+        }[page_type]
+        directory.mkdir(parents=True, exist_ok=True)
+        if page_type == "trace":
+            gitkeep = directory / ".gitkeep"
+            if gitkeep.exists():
+                gitkeep.unlink()
+        path = directory / (filename or f"example-{page_type}.md")
+        lines = [
+            "---",
+            f"type: {page_type}",
+            f"{page_type}_id: {page_type}:{path.stem}",
+            *frontmatter_lines,
+            "---",
+            "",
+            *body_lines,
+        ]
+        path.write_text(newline.join(lines), encoding="utf-8", newline="")
+        return path
+
+    def write_contradiction_page(
+        self, *frontmatter_lines: str, filename: str = "pricing-conflict.md"
+    ) -> Path:
+        directory = self.wiki_dir / "tasks" / "contradiction-resolutions"
+        gitkeep = directory / ".gitkeep"
+        if gitkeep.exists():
+            gitkeep.unlink()
+        path = directory / filename
+        lines = [
+            "---",
+            "type: contradiction-resolution",
+            *frontmatter_lines,
+            "---",
+            "",
+        ]
+        path.write_text("\n".join(lines), encoding="utf-8")
         return path
 
     def test_render_source_adds_missing_renditions_and_source_type(self) -> None:
@@ -1152,9 +1207,9 @@ class MigrateV2Tests(unittest.TestCase):
         self,
     ) -> None:
         self.entities_dir.mkdir()
-        comparisons_dir = self.wiki_dir / "comparisons"
-        comparisons_dir.mkdir()
-        comparison_path = comparisons_dir / "options.md"
+        unsupported_dir = self.wiki_dir / "notes"
+        unsupported_dir.mkdir()
+        comparison_path = unsupported_dir / "options.md"
         comparison_path.write_text(
             "\n".join(
                 [
@@ -1535,3 +1590,412 @@ class MigrateV2Tests(unittest.TestCase):
         self.assertEqual(len(report["errors"]), 1)
         self.assertIn("entities directory does not exist", report["errors"][0])
         self.assertNotIn("Traceback", result.stdout)
+
+    def test_comparison_migrates_legacy_provenance_and_defaults(self) -> None:
+        self.entities_dir.mkdir()
+        path = self.write_work_page(
+            "comparison",
+            'title: "Options"',
+            "sources: []",
+            "filed_from_query: true",
+            "created: 2026-01-01",
+            "updated: 2026-01-02",
+            body_lines=("# Options", "", "Café body."),
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        rendered = migrate_v2.render_page(
+            next(page for page in migration.pages if page.path == path)
+        )
+
+        self.assertTrue(migration.is_valid)
+        for expected in (
+            "origin: query",
+            "status: active",
+            "subjects: []",
+            "related: []",
+            'question: ""',
+        ):
+            self.assertIn(expected, rendered)
+        self.assertNotIn("filed_from_query", rendered)
+        self.assertTrue(rendered.endswith("# Options\n\nCafé body."))
+
+    def test_work_page_preserves_existing_origin_and_status(self) -> None:
+        self.entities_dir.mkdir()
+        path = self.write_work_page(
+            "comparison",
+            'title: "Options"',
+            "origin: ingest",
+            "filed_from_query: true",
+            "status: superseded",
+            "subjects: []",
+            "sources: []",
+            "related: []",
+            'question: "Why?"',
+            "created: 2026-01-01",
+            "updated: 2026-01-02",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        page = next(page for page in migration.pages if page.path == path)
+        rendered = migrate_v2.render_page(page)
+
+        self.assertTrue(migration.is_valid)
+        self.assertIn("origin: ingest", rendered)
+        self.assertIn("status: superseded", rendered)
+        self.assertNotIn("filed_from_query", rendered)
+
+    def test_work_page_rejects_invalid_enums_and_field_shapes(self) -> None:
+        self.entities_dir.mkdir()
+        self.write_work_page(
+            "comparison",
+            'title: "Options"',
+            "origin: robot",
+            "status: archived",
+            "subjects: not-a-list",
+            "sources: []",
+            "related: []",
+            "question: []",
+            "created: 2026-01-01",
+            "updated: 2026-01-02",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+
+        self.assertFalse(migration.is_valid)
+        joined = "\n".join(migration.errors)
+        self.assertIn("origin must be one of", joined)
+        self.assertIn("status must be one of", joined)
+        self.assertIn("subjects must be a list", joined)
+        self.assertIn("question must be a scalar", joined)
+
+    def test_synthesis_adds_conservative_defaults(self) -> None:
+        self.entities_dir.mkdir()
+        path = self.write_work_page(
+            "synthesis",
+            'title: "Market"',
+            "sources: []",
+            "filed_from_query: false",
+            "created: 2026-01-01",
+            "updated: 2026-01-02",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        page = next(page for page in migration.pages if page.path == path)
+        rendered = migrate_v2.render_page(page)
+
+        self.assertTrue(migration.is_valid)
+        for expected in (
+            "origin: manual",
+            "status: active",
+            "subjects: []",
+            "related: []",
+            'question: ""',
+            "confidence: low",
+        ):
+            self.assertIn(expected, rendered)
+
+    def test_trace_migrates_concept_and_ingest_range(self) -> None:
+        self.entities_dir.mkdir()
+        path = self.write_work_page(
+            "trace",
+            'concept: "Machine Learning"',
+            "sources: []",
+            "filed_from_query: true",
+            "created: 2026-01-01",
+            "updated: 2026-01-02",
+            "ingest_range: 2026-01-01 → 2026-02-03",
+            newline="\r\n",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        changed = migrate_v2.apply_migration(migration)
+        migrated = path.read_bytes()
+
+        self.assertTrue(migration.is_valid)
+        self.assertEqual(changed, (path,))
+        self.assertIn(b'title: "Machine Learning"\r\n', migrated)
+        self.assertIn(b'subjects:\r\n  - "[[Machine Learning]]"\r\n', migrated)
+        self.assertIn(
+            b"ingest_start: 2026-01-01\r\ningest_end: 2026-02-03\r\n",
+            migrated,
+        )
+        self.assertNotIn(b"ingest_range:", migrated)
+        self.assertNotIn(b"\n", migrated.replace(b"\r\n", b""))
+        self.assertNotIn(b"concept:", migrated)
+
+    def test_trace_repairs_nested_ingest_range(self) -> None:
+        self.entities_dir.mkdir()
+        path = self.write_work_page(
+            "trace",
+            'concept: "Legacy Concept"',
+            'title: "Evidence Trail"',
+            "subjects:",
+            '  - "[[Canonical Concept]]"',
+            "sources: []",
+            "related: []",
+            'question: "How?"',
+            "origin: manual",
+            "status: active",
+            "confidence: medium",
+            "ingest_range:",
+            "  start: 2026-01-01",
+            "  end: 2026-02-01",
+            "created: 2026-01-01",
+            "updated: 2026-02-01",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        page = next(page for page in migration.pages if page.path == path)
+        rendered = migrate_v2.render_page(page)
+
+        self.assertTrue(migration.is_valid)
+        self.assertIn('title: "Evidence Trail"', rendered)
+        self.assertIn('  - "[[Canonical Concept]]"', rendered)
+        self.assertNotIn("Legacy Concept", rendered)
+        self.assertIn("ingest_start: 2026-01-01", rendered)
+        self.assertIn("ingest_end: 2026-02-01", rendered)
+        self.assertNotIn("ingest_range:", rendered)
+
+    def test_trace_current_ingest_fields_are_idempotent(self) -> None:
+        self.entities_dir.mkdir()
+        path = self.write_work_page(
+            "trace",
+            'title: "Evidence Trail"',
+            "sources: []",
+            "subjects: []",
+            "related: []",
+            'question: "How?"',
+            "origin: manual",
+            "status: active",
+            "confidence: medium",
+            "ingest_start: 2026-01-01",
+            "ingest_end: 2026-02-01",
+            "created: 2026-01-01",
+            "updated: 2026-02-01",
+        )
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        page = next(page for page in migration.pages if page.path == path)
+
+        self.assertTrue(migration.is_valid)
+        self.assertFalse(page.needs_change)
+
+    def test_trace_adds_only_missing_flat_ingest_field(self) -> None:
+        self.entities_dir.mkdir()
+        path = self.write_work_page(
+            "trace",
+            'title: "Evidence Trail"',
+            "sources: []",
+            "ingest_start: 2026-01-01",
+            "created: 2026-01-01",
+            "updated: 2026-02-01",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        page = next(page for page in migration.pages if page.path == path)
+        rendered = migrate_v2.render_page(page)
+
+        self.assertTrue(migration.is_valid)
+        self.assertEqual(rendered.count("ingest_start:"), 1)
+        self.assertIn("ingest_start: 2026-01-01", rendered)
+        self.assertIn('ingest_end: ""', rendered)
+
+    def test_trace_rejects_legacy_and_flat_ingest_fields_together(self) -> None:
+        self.entities_dir.mkdir()
+        self.write_work_page(
+            "trace",
+            'title: "Evidence Trail"',
+            "sources: []",
+            "ingest_range: 2026-01-01 → 2026-02-01",
+            "ingest_start: 2026-01-01",
+            "created: 2026-01-01",
+            "updated: 2026-02-01",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+
+        self.assertFalse(migration.is_valid)
+        self.assertTrue(any("must not coexist" in error for error in migration.errors))
+
+    def test_trace_rejects_malformed_legacy_range(self) -> None:
+        self.entities_dir.mkdir()
+        self.write_work_page(
+            "trace",
+            'concept: "Machine Learning"',
+            "sources: []",
+            "ingest_range: 2026-01-01 - 2026-02-01",
+            "created: 2026-01-01",
+            "updated: 2026-02-01",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+
+        self.assertFalse(migration.is_valid)
+        self.assertTrue(any("ingest_range must be START" in e for e in migration.errors))
+
+    def test_directory_artifacts_preview_apply_and_idempotence(self) -> None:
+        self.entities_dir.mkdir()
+        traces_keep = self.wiki_dir / "traces" / ".gitkeep"
+        contradiction_keep = (
+            self.wiki_dir / "tasks" / "contradiction-resolutions" / ".gitkeep"
+        )
+        traces_keep.unlink()
+        traces_keep.parent.rmdir()
+        contradiction_keep.unlink()
+        contradiction_keep.parent.rmdir()
+        contradiction_keep.parent.parent.rmdir()
+        legacy = self.wiki_dir / "contradictions" / "legacy.md"
+        legacy.parent.mkdir()
+        legacy.write_text("legacy", encoding="utf-8")
+
+        first = migrate_v2.build_migration_plan(self.entities_dir)
+        self.assertEqual(first.create_paths, (traces_keep, contradiction_keep))
+        self.assertFalse(traces_keep.exists())
+        changed = migrate_v2.apply_migration(first)
+        second = migrate_v2.build_migration_plan(self.entities_dir)
+
+        self.assertEqual(changed, (traces_keep, contradiction_keep))
+        self.assertTrue(traces_keep.is_file())
+        self.assertTrue(contradiction_keep.is_file())
+        self.assertEqual(second.create_paths, ())
+        self.assertEqual(migrate_v2.apply_migration(second), ())
+        self.assertEqual(legacy.read_text(encoding="utf-8"), "legacy")
+
+    def test_contradiction_adds_stable_id(self) -> None:
+        self.entities_dir.mkdir()
+        path = self.write_contradiction_page(
+            'title: "Resolve pricing"',
+            "status: open",
+            "priority: high",
+            "subjects: []",
+            "claims: []",
+            'resolution_question: "Which is correct?"',
+            "evidence: []",
+            "log_references: []",
+            "created: 2026-01-01",
+            "updated: 2026-01-02",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        page = next(page for page in migration.pages if page.path == path)
+        rendered = migrate_v2.render_page(page)
+
+        self.assertTrue(migration.is_valid)
+        self.assertIn(
+            "contradiction_resolution_id: contradiction-resolution:pricing-conflict",
+            rendered,
+        )
+
+    def test_contradiction_conditional_fields_and_atomicity(self) -> None:
+        self.entities_dir.mkdir()
+        entity_path = self.write_entity_page('title: "Acme Corporation"')
+        original = entity_path.read_bytes()
+        traces_keep = self.wiki_dir / "traces" / ".gitkeep"
+        traces_keep.unlink()
+        traces_keep.parent.rmdir()
+        self.write_contradiction_page(
+            'title: "Resolve pricing"',
+            "status: resolved",
+            "priority: medium",
+            "subjects: []",
+            "claims: []",
+            'resolution_question: "Which is correct?"',
+            "evidence: []",
+            "log_references: []",
+            "created: 2026-01-01",
+            "updated: 2026-01-02",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+
+        self.assertFalse(migration.is_valid)
+        self.assertTrue(any("resolution is required" in e for e in migration.errors))
+        with self.assertRaisesRegex(ValueError, "invalid migration"):
+            migrate_v2.apply_migration(migration)
+        self.assertEqual(entity_path.read_bytes(), original)
+        self.assertFalse(traces_keep.exists())
+
+    def test_contradiction_duplicate_effective_ids_are_rejected(self) -> None:
+        self.entities_dir.mkdir()
+        common = (
+            'title: "Resolve pricing"',
+            "status: open",
+            "priority: medium",
+            "subjects: []",
+            "claims: []",
+            'resolution_question: "Which is correct?"',
+            "evidence: []",
+            "log_references: []",
+            "created: 2026-01-01",
+            "updated: 2026-01-02",
+        )
+        self.write_contradiction_page(
+            "contradiction_resolution_id: contradiction-resolution:same", *common
+        )
+        self.write_contradiction_page(
+            "contradiction_resolution_id: contradiction-resolution:same",
+            *common,
+            filename="other.md",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+
+        self.assertFalse(migration.is_valid)
+        self.assertTrue(any("duplicate ID" in error for error in migration.errors))
+
+    def test_contradiction_rejects_mapping_claim_and_missing_dismissal(self) -> None:
+        self.entities_dir.mkdir()
+        self.write_contradiction_page(
+            'title: "Resolve pricing"',
+            "status: dismissed",
+            "priority: low",
+            "subjects: []",
+            "claims:",
+            "  - text: Unsupported mapping",
+            'resolution_question: "Which is correct?"',
+            "evidence: []",
+            "log_references: []",
+            "created: 2026-01-01",
+            "updated: 2026-01-02",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+
+        self.assertFalse(migration.is_valid)
+        joined = "\n".join(migration.errors)
+        self.assertIn("claims must contain non-empty scalar values", joined)
+        self.assertIn("dismissal_reason is required", joined)
+
+    def test_contradiction_rejects_empty_required_block_scalar(self) -> None:
+        self.entities_dir.mkdir()
+        self.write_contradiction_page(
+            'title: "Resolve pricing"',
+            "status: open",
+            "priority: low",
+            "subjects: []",
+            "claims: []",
+            "resolution_question: >-",
+            "evidence: []",
+            "log_references: []",
+            "created: 2026-01-01",
+            "updated: 2026-01-02",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+
+        self.assertFalse(migration.is_valid)
+        self.assertTrue(
+            any("resolution_question must not be empty" in e for e in migration.errors)
+        )
+
+    def test_cli_reports_directory_creation_actions(self) -> None:
+        self.entities_dir.mkdir()
+        traces_keep = self.wiki_dir / "traces" / ".gitkeep"
+        contradiction_keep = (
+            self.wiki_dir / "tasks" / "contradiction-resolutions" / ".gitkeep"
+        )
+        traces_keep.unlink()
+        traces_keep.parent.rmdir()
+        contradiction_keep.unlink()
+        contradiction_keep.parent.rmdir()
+        contradiction_keep.parent.parent.rmdir()
+
+        preview = run_cli("--wiki-dir", str(self.wiki_dir))
+        applied = run_cli("--wiki-dir", str(self.wiki_dir), "--apply", "--json")
+        report = json.loads(applied.stdout)
+
+        self.assertEqual(preview.returncode, 0)
+        self.assertIn(f"would create: {traces_keep}", preview.stdout)
+        self.assertIn(f"would create: {contradiction_keep}", preview.stdout)
+        self.assertEqual(applied.returncode, 0)
+        self.assertEqual(report["changed_count"], 2)
+        self.assertEqual(
+            report["changed_paths"], [str(traces_keep), str(contradiction_keep)]
+        )
