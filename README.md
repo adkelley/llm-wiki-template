@@ -49,6 +49,8 @@ Use `wiki/` for the LLM-maintained knowledge layer, such as:
 - entity pages
 - comparisons
 - syntheses
+- traces
+- contradiction-resolution tasks
 - logs
 - overviews
 
@@ -90,7 +92,8 @@ Add a section like this to your `CLAUDE.md` or `AGENT.md`:
 ## Git Procedure
 After every ingest, lint, or wiki update operation, commit the changes
 as a normal part of the workflow. Do not wait for the user to ask.
-- Stage only wiki/, todos/, scripts/, and raw/ files. Never stage .obsidian/, .claude/, or .DS_Store.
+- Stage only `wiki/` and `raw/` files. Never stage `.obsidian/`, `.claude/`, or
+  `.DS_Store`.
 - Write a concise commit message summarizing what was ingested or updated.
 - End every commit message with: Co-Authored-By: <Enter your LLM info here>
 - Do NOT push to remote unless explicitly asked.

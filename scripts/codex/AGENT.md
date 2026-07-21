@@ -1,16 +1,66 @@
 # LLM Wiki — Master Schema
 
 ## Domain
-[Enter your wiki subject here example - "AI LLM Research, May 2026 -"]
+[Enter your wiki subject here; for example, "AI and LLM Research — May 2026"]
+
+## Wiki Philosophy
+The wiki is organized into three layers.
+
+### Knowledge
+Knowledge pages describe canonical facts and observations.
+
+Examples:
+
+- entities
+- concepts
+- sources
+
+### Work
+Work pages contain durable analyses derived from the knowledge pages.
+
+Examples:
+
+- syntheses
+- traces
+- comparisons
+
+These pages answer questions and capture reasoning, but they are not themselves
+knowledge pages.
+
+### Tasks
+Task pages represent operational work required to curate or improve the wiki.
+
+Examples:
+
+- contradiction resolutions
+
+Tasks represent current operational state.
+
+`wiki/log.md` records history.
+
+`wiki/tasks/` records current state.
+
+Operational questions should preferentially be answered from task pages rather
+than reconstructing history from `wiki/log.md`.
 
 ## Project Structure
-- `raw/` — immutable source documents (may be symlinks to other locations). NEVER modify any file in raw/.
+- `raw/` — immutable source documents (may be symlinks to other locations).
+  NEVER modify any file in `raw/`.
 - `wiki/` — LLM-generated wiki. You own this layer entirely.
+  - `entities/`
+  - `concepts/`
+  - `sources/`
+  - `comparisons/`
+  - `syntheses/`
+  - `traces/`
+  - `tasks/`
+    - `contradiction-resolutions/`
 - `wiki/index.md` — master catalog. Update on EVERY ingest.
 - `wiki/log.md` — append-only activity log. Never delete entries.
 - `wiki/overview.md` — high-level synthesis. Revise after major ingests.
 - `AGENT.md` — this file. Re-read at the start of every session.
-- `wiki/hot.md` — session hot cache (~500 words). Read silently at session start BEFORE responding.
+- `wiki/hot.md` — session hot cache (~500 words). Read silently at session
+  start BEFORE responding.
 
 ## Tool Dependency Resolution
 Do not install or update a dependency merely because its bare command is
@@ -39,9 +89,7 @@ source_file: "[[raw/{canonical_source}.md]]"
 renditions:
   - "[[raw/{original}.pdf]]"
   - "[[raw/{original}.pptx]]"
-source_type: article | paper | report | presentation | communication |
-             transcript | recording | book | documentation |
-             dataset | webpage | note | other | unknown
+source_type: article
 attribution: "Author, organization, or complete credit line"
 date_published: YYYY-MM-DD
 date_ingested: YYYY-MM-DD
@@ -53,9 +101,11 @@ related:
   - "[[entity1]]"
   - "[[concept1]]"
   - "[[source1]]"
-confidence: high | medium | low
+confidence: high
 ---
 ```
+
+The `confidence` value MUST be one of `high`, `medium`, or `low`.
 
 #### Source identity
 
@@ -111,6 +161,8 @@ Each requires its own source page.
 
 Choose the source type that best describes the intellectual work, not its file
 format.
+
+The `source_type` value MUST be one of the values in the following table.
 
 | Type | Description |
 |------|-------------|
@@ -171,7 +223,9 @@ Preserve existing links and their order.
 Only add relationships that are supported by the source material or explicitly
 provided by the user.
 
-### Concept Pages (wiki/concepts/)
+### Concept Pages (`wiki/concepts/`)
+
+```yaml
 ---
 type: concept
 concept_id: concept:{slug}
@@ -188,10 +242,13 @@ related:
   - "[[entity1]]"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-confidence: high | medium | low
+confidence: high
 ---
+```
 
-### Entity Pages (wiki/entities/)
+### Entity Pages (`wiki/entities/`)
+
+```yaml
 ---
 type: entity
 entity_id: entity:{slug}
@@ -210,6 +267,7 @@ related:
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 ---
+```
 
 Concept and entity naming fields follow these rules:
 
@@ -236,46 +294,293 @@ Preserve existing links and their order. Add relationships only when supported
 by source material or explicitly supplied by the user.
 
 
-### Comparison Pages (wiki/comparisons/)
+### Comparison Pages (`wiki/comparisons/`)
+
+```yaml
 ---
 type: comparison
 comparison_id: comparison:{slug}
 title: "Comparing X vs Y"
+status: active  # active | superseded | deprecated
+subjects:
+  - "[[entity1]]"
+  - "[[entity2]]"
 sources:
   - "[[source1]]"
   - "[[source2]]"
-filed_from_query: true
+related:
+  - "[[concept1]]"
+question: "How does X compare to Y?"
+origin: query  # query | ingest | migration | manual
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 ---
+```
 
-### Synthesis Pages (wiki/syntheses/)
+Comparison pages capture a structured analysis of two or more entities,
+concepts, products, companies, technologies, strategies, or sources.
+
+The goal is **not** merely to list differences. A comparison page should help
+a future reader understand the important dimensions of comparison and the
+evidence supporting each conclusion.
+
+Use a comparison page when answering questions such as:
+
+- Company A vs Company B
+- GPT-5 vs Claude
+- Product X vs Product Y
+- Strategy A vs Strategy B
+- Two competing interpretations of the same evidence
+
+A comparison page should:
+
+- identify the comparison subjects
+- define the comparison dimensions
+- summarize similarities and differences
+- cite supporting source pages
+- explicitly distinguish evidence from inference
+- identify areas where evidence is incomplete or conflicting
+- conclude with the most important takeaways
+
+Comparisons should remain as objective as possible. Avoid making recommendations
+unless the user's question explicitly requests one.
+
+The `origin` value MUST be one of `query`, `ingest`, `migration`, or `manual`.
+The `status` value MUST be one of `active`, `superseded`, or `deprecated`.
+
+Example structure:
+
+- Purpose
+- Subjects
+- Comparison dimensions
+- Evidence
+- Areas of agreement
+- Areas of difference
+- Open questions
+- Conclusion
+
+### Synthesis Pages (`wiki/syntheses/`)
+
+```yaml
 ---
 type: synthesis
 synthesis_id: synthesis:{slug}
 title: "Synthesis Title"
+question: "What question does this synthesis answer?"
+origin: query  # query | ingest | migration | manual
+status: active  # active | superseded | deprecated
+subjects:
+  - "[[concept1]]"
+  - "[[entity1]]"
 sources:
   - "[[source1]]"
   - "[[source2]]"
-filed_from_query: true
+related:
+  - "[[comparison1]]"
+  - "[[trace1]]"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
+confidence: high  # high | medium | low
 ---
+```
 
-### Trace Pages (wiki/traces/)
+The `origin` value MUST be one of `query`, `ingest`, `migration`, or `manual`.
+The `status` value MUST be one of `active`, `superseded`, or `deprecated`.
+The `confidence` value MUST be one of `high`, `medium`, or `low`.
+
+A synthesis page combines evidence from multiple independent sources to produce
+a higher-level understanding of a topic. Unlike a source page, a synthesis is
+not a summary of one document. Unlike a comparison, it is not primarily
+organized around contrasting subjects. Instead, a synthesis answers a broader
+question by integrating many sources into a coherent explanation.
+
+Typical synthesis questions include:
+
+- What is this company's AI strategy?
+- What do we currently know about the market?
+- How has this product evolved?
+- What is the current consensus on this technology?
+- What themes repeatedly emerge across the available evidence?
+
+A synthesis should:
+
+- organize information into logical themes
+- reconcile overlapping evidence
+- identify changes over time
+- distinguish established facts from inference
+- highlight uncertainty where evidence is incomplete
+- identify contradictions that deserve their own contradiction page
+- link heavily to entities, concepts, and sources
+
+Do not duplicate source summaries. Instead, synthesize them into a higher-level
+understanding.
+
+Example structure:
+
+- Executive summary
+- Current understanding
+- Supporting evidence
+- Major themes
+- Timeline (if applicable)
+- Confidence assessment
+- Open questions
+- Related concepts
+
+### Trace Pages (`wiki/traces/`)
+
+```yaml
 ---
 type: trace
 trace_id: trace:{slug}
-concept: "Concept Title"
+title: "Trace Title"
+question: "What question does this trace answer?"
+origin: query  # query | ingest | migration | manual
+status: active  # active | superseded | deprecated
+subjects:
+  - "[[entity1]]"
+  - "[[concept1]]"
 sources:
   - "[[source1]]"
   - "[[source2]]"
-filed_from_query: true
+related:
+  - "[[synthesis1]]"
+  - "[[comparison1]]"
+ingest_range:
+  start: YYYY-MM-DD
+  end: YYYY-MM-DD
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-ingest_range: YYYY-MM-DD → YYYY-MM-DD
+confidence: high  # high | medium | low
 ---
+```
 
+The `origin` value MUST be one of `query`, `ingest`, `migration`, or `manual`.
+The `status` value MUST be one of `active`, `superseded`, or `deprecated`.
+The `confidence` value MUST be one of `high`, `medium`, or `low`.
+
+A trace page reconstructs the evidence trail behind a conclusion, claim,
+strategy, policy, decision, or narrative.
+
+Unlike a synthesis, which explains **what we currently know**, a trace explains
+**how we know it** by following evidence across multiple sources and, when
+appropriate, over time.
+
+Unlike a comparison, a trace is not organized around contrasting subjects.
+Instead, it reconstructs the sequence of evidence that supports a particular
+understanding.
+
+Create a trace when answering questions such as:
+
+- How did this conclusion develop?
+- Where did this claim originate?
+- How has this strategy evolved?
+- Which sources support this belief?
+- How did messaging change over time?
+- What evidence led us to this understanding?
+
+A trace should:
+
+- clearly state the question being investigated
+- identify the primary subject(s) of the trace
+- organize evidence chronologically whenever possible
+- distinguish direct evidence from inference
+- identify where claims first appear, evolve, or disappear
+- note conflicting evidence and link to a contradiction page if the conflict
+  cannot be reconciled
+- cite every significant conclusion back to one or more source pages
+- conclude with the strongest evidence-supported narrative
+
+A trace is investigative rather than encyclopedic.
+
+Avoid merely summarizing documents. Instead, reconstruct the chain of evidence
+that allows a future reader to understand how the conclusion was reached.
+
+Throughout the trace, clearly distinguish:
+
+- Evidence — observations, quotations, dates, and facts directly supported by
+  one or more source pages.
+- Inference — conclusions drawn by reasoning across the evidence.
+
+Every material inference should be traceable back to one or more cited sources.
+
+Suggested structure:
+
+- Research Question
+- Executive Summary
+- Scope
+- Timeline of Evidence
+- Evolution of the Evidence
+- Key Turning Points
+- Remaining Uncertainties
+- Conclusion
+
+### Contradiction Resolution Pages
+
+Each page represents exactly one operational contradiction.
+
+```yaml
+---
+type: contradiction-resolution
+contradiction_resolution_id: contradiction-resolution:{slug}
+title: "Resolve ..."
+status: open
+priority: medium
+subjects:
+  - "[[entity-or-concept]]"
+claims:
+  - "Claim text — [[supporting-source]]"
+resolution_question: >-
+  What evidence is needed?
+evidence:
+  - "[[source]]"
+log_references:
+  - "[YYYY-MM-DD] query | Exact heading"
+resolution: >-
+  Required when status: resolved.
+dismissal_reason: >-
+  Required when status: dismissed.
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+---
+```
+
+Rules:
+
+- `status` MUST be one of `proposed`, `open`, `in-progress`,
+  `resolution-proposed`, `resolved`, or `dismissed`.
+- `priority` MUST be one of `low`, `medium`, or `high`.
+- `claims` MUST be a flat list of scalar strings.
+- Do not use nested YAML objects inside `claims`.
+- Each claim should include one or more supporting wikilinks.
+- `resolution` is required only for resolved pages.
+- `dismissal_reason` is required only for dismissed pages.
+
+#### Operational Rules
+
+When an ingest or query uncovers contradictory information:
+
+1. Search existing contradiction-resolution pages.
+2. Update an existing page if one already represents the contradiction.
+3. Otherwise create a new contradiction-resolution page.
+4. Record the discovery in `wiki/log.md`.
+
+Do not use `wiki/log.md` as the primary source of current operational state.
+
+#### Design Principles
+
+- Prefer concrete operational needs over speculative abstractions.
+- Do not introduce new task families until a real operational backlog exists.
+- Optimize schemas for both machine parsing and Obsidian usability.
+- Frontmatter should remain human-readable.
+- Every schema migration should have a measurable "success query".
+
+Example:
+
+> "What contradictions remain outstanding?"
+
+should be answerable from
+`wiki/tasks/contradiction-resolutions/`
+without replaying `wiki/log.md`.
 ## Stable Page IDs
 
 Every wiki page type defined above MUST have its corresponding stable ID.
@@ -288,6 +593,7 @@ Stable IDs use `{type}:{slug}`:
 - `comparison:acme-vs-globex`
 - `synthesis:market-overview`
 - `trace:machine-learning-adoption`
+- `contradiction-resolution:conflicting-market-estimates`
 
 Derive the slug from the page filename when creating a page.
 
@@ -296,8 +602,29 @@ title, filename, canonical label, or folder location changes.
 
 Before assigning an ID, search existing wiki pages to ensure it is unique.
 
+## Choosing the Correct Work Page
+
+When filing persistent analysis, choose the page type that best matches the
+work performed.
+
+| If the work primarily... | Create |
+|--------------------------|--------|
+| summarizes one document | Source |
+| defines a concept | Concept |
+| describes an entity | Entity |
+| integrates many sources into one understanding | Synthesis |
+| compares multiple subjects | Comparison |
+| reconstructs how a conclusion evolved | Trace |
+| records unresolved conflicting evidence | Contradiction Resolution |
+
+A work page should capture reasoning that would otherwise need to be repeated in
+future conversations.
+
+Prefer updating an existing work page over creating a duplicate.
+
 ## Ingest Workflow
 When I say "ingest [filename]" or "ingest raw/[path]":
+
 1. Run the ingest guard before reading or summarizing the source:
    `python3 scripts/wiki/ingest_guard.py check raw/[path]`
 2. If the guard reports a duplicate, stop and report the matching manifest
@@ -323,45 +650,79 @@ When I say "ingest [filename]" or "ingest raw/[path]":
 
 If instead I say a file or folder should never be ingested, record that
 decision rather than just skipping it silently:
+
 - one file: `python3 scripts/wiki/ingest_guard.py skip raw/[path] --reason "..."`
 - a folder or pattern: `python3 scripts/wiki/ingest_guard.py ignore-path "[folder]/"`
 
 ## Query Workflow
 When I ask a question:
-1. Read wiki/index.md to identify relevant pages.
-2. Read those pages directly.
-3. Synthesize an answer with [[wiki-link]] citations.
-4. If the answer is a valuable analysis, offer to file it as a new
-   page in wiki/comparisons/ or wiki/syntheses/.
-5. Update wiki/log.md with a query entry.
+
+1. Read `wiki/index.md` to identify the most relevant pages.
+2. Read only the pages needed to answer the question.
+3. Synthesize an answer with `[[wiki-link]]` citations.
+4. Reconcile differences between sources whenever possible, distinguishing
+   changes over time, differences in scope, and genuine contradictions.
+5. If the work produces knowledge that should persist beyond the current
+   conversation, offer to create or update the appropriate work page:
+    - `wiki/syntheses/`
+    - `wiki/comparisons/`
+    - `wiki/traces/`
+    - `wiki/tasks/contradiction-resolutions/` (only for unresolved material conflicts)
+6. Update `wiki/log.md` with a query entry.
 
 ## Lint Workflow
-When I say "lint" or "health check":
-1. Scan for contradictions between pages. List them.
-2. Find orphan pages (no inbound links). List them.
-3. List concepts mentioned 3+ times but lacking their own page.
-4. Check for stale claims that newer sources may have superseded.
-5. Suggest 3–5 new questions or sources to investigate.
-6. Append a lint entry to wiki/log.md.
+When I say “lint” or “health check”:
+
+1. Check the structural integrity of the wiki:
+    - broken or invalid `[[wiki-links]]`
+    - orphan pages (no inbound links)
+    - duplicate or missing stable IDs
+    - invalid or incomplete frontmatter
+    - pages that violate the required schema
+2. Check the wiki for curation opportunities:
+    - concepts or entities frequently mentioned but lacking canonical pages
+    - pages that should be linked but are not
+    - sources that have not yet been connected to relevant concepts or entities
+3. Check for knowledge consistency:
+    - identify material conflicts between pages
+    - determine whether each conflict is already explained or tracked by an
+      existing contradiction page
+    - report only new or unresolved contradictions
+4. Check for stale knowledge:
+    - identify claims that newer evidence may supersede
+    - distinguish historical statements from information that should be updated
+5. Recommend the highest-value maintenance actions (typically 3–5), such as:
+    - creating missing entity or concept pages
+    - updating syntheses or traces
+    - investigating unresolved contradictions
+    - ingesting additional sources
+6. Append a lint entry to `wiki/log.md`.
 
 ## Log Format
 Each log entry MUST start with this prefix for parsability:
+
+```text
 ## [YYYY-MM-DD] {ingest|query|lint} | {title/description}
+```
 
 Example:
+
+```text
 ## [2026-04-12] ingest | Mixture of Experts Efficiency Study
 Source: raw/2026-04-moe-efficiency.md
 Pages created: wiki/sources/summary-moe-efficiency.md
 Pages updated: wiki/concepts/mixture-of-experts.md,
                wiki/concepts/scaling-laws.md
 Contradictions flagged: wiki/concepts/dense-vs-sparse.md (see note)
+```
 
 ## Hot Cache (`wiki/hot.md`)
 Read `wiki/hot.md` silently at the start of EVERY session, before responding.
 This file contains ~500 words of recent session context. Do not summarize it
 to the user — just use it to restore your operating context.
 
-After EVERY session (or when the user says /close), update wiki/hot.md:
+After EVERY session (or when the user says `/close`), update `wiki/hot.md`:
+
 - Keep total length under 500 words.
 - Overwrite (do not append).
 - Structure:
@@ -384,15 +745,20 @@ After EVERY session (or when the user says /close), update wiki/hot.md:
 ## Git Procedure
 After every ingest, lint, or wiki update operation, commit the changes
 as a normal part of the workflow. Do not wait for the user to ask.
-- Stage only wiki/ and raw/ files. Never stage .obsidian/, .claude/, or .DS_Store.
+
+- Stage only `wiki/` and `raw/` files. Never stage `.obsidian/`, `.claude/`, or
+  `.DS_Store`.
 - Write a concise commit message summarizing what was ingested or updated.
-- End every commit message with: `Co-Authored-By: {active_llm_model_and_effort} <{llm_company_email}>`
-  Use the actual current session model and provider email, e.g. `gpt-5.4 medium <noreply@openai.com>` or `Claude Opus 4.6 <noreply@anthropic.com>`
+- End every commit message with:
+  `Co-Authored-By: {active_llm_model_and_effort} <{llm_company_email}>`
+  Use the actual current session model and provider email, for example,
+  `gpt-5.4 medium <noreply@openai.com>` or
+  `Claude Opus 4.6 <noreply@anthropic.com>`.
 - Do NOT push to remote unless explicitly asked.
 
 ## Safety Rules
-- NEVER write to raw/. This is a hard constraint with no exceptions.
+- NEVER write to `raw/`. This is a hard constraint with no exceptions.
 - NEVER delete wiki pages. Mark as deprecated in frontmatter instead.
 - Always update wiki/index.md and wiki/log.md on every operation.
-- When uncertain about a claim's accuracy, set confidence: low.
+- When uncertain about a claim's accuracy, set `confidence: low`.
 - Cross-reference all new pages to at least 2 existing pages.

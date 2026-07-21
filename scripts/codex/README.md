@@ -42,9 +42,9 @@ In particular, make sure to update the `Domain` section so it reflects the subje
 
 ## Upgrading an existing wiki
 
-The generated `AGENT.md` uses the current entity naming schema. Updating that
-template does not migrate existing wiki pages. Preview and apply the migrations
-in numerical order:
+The generated `AGENT.md` uses the current wiki schema and directory structure.
+Updating that template does not migrate existing wiki pages. Preview and apply
+the migrations in numerical order:
 
 ```bash
 python3 scripts/wiki/migrate_v1.py --wiki-dir wiki
