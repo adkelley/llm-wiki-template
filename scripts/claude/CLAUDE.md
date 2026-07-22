@@ -445,9 +445,8 @@ sources:
 related:
   - "[[synthesis1]]"
   - "[[comparison1]]"
-ingest_range:
-  start: YYYY-MM-DD
-  end: YYYY-MM-DD
+ingest_start: YYYY-MM-DD
+ingest_end: YYYY-MM-DD
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 confidence: high  # high | medium | low

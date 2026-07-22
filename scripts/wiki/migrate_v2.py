@@ -11,7 +11,8 @@ inferring their values. For concept and entity pages, it replaces ``title``
 with ``canonical_name`` and adds any missing name-list fields: ``aliases``,
 ``abbreviations``, ``known_variants``, and ``known_errors``. Comparison,
 synthesis, and trace pages receive the current work-page provenance, status,
-relationship, and question fields. Trace ranges are converted to mappings.
+relationship, and question fields. Trace ranges are converted to top-level
+``ingest_start`` and ``ingest_end`` scalar fields.
 Contradiction-resolution pages in their current directory are validated and
 receive missing stable IDs.
 
@@ -461,32 +462,54 @@ def plan_work_page(
                 )
 
         ingest_range = frontmatter.get("ingest_range")
-        if ingest_range is None:
-            proposed.append(
-                ("ingest_range", ("ingest_range:", '  start: ""', '  end: ""'))
+        flat_range_fields = ("ingest_start", "ingest_end")
+        existing_flat_fields = {
+            field_name for field_name in flat_range_fields if field_name in frontmatter
+        }
+
+        if ingest_range is not None and existing_flat_fields:
+            errors.append(
+                f"{path}: ingest_range must not coexist with ingest_start or ingest_end"
             )
-        elif ingest_range == "":
-            mapping = block_mapping_values(path, "ingest_range")
-            if mapping is None or set(mapping) != {"start", "end"}:
-                errors.append(f"{path}: ingest_range must contain start and end")
+        elif ingest_range is not None:
+            if ingest_range == "":
+                mapping = block_mapping_values(path, "ingest_range")
+                if mapping is None or set(mapping) != {"start", "end"}:
+                    errors.append(f"{path}: ingest_range must contain start and end")
+                    mapping = None
+                parts = None if mapping is None else (mapping["start"], mapping["end"])
             else:
-                for key, value in mapping.items():
-                    error = scalar_error(path, f"ingest_range.{key}", value, allow_empty=True)
+                range_value = unquote_scalar(ingest_range)
+                split_parts = [part.strip() for part in range_value.split("→")]
+                if len(split_parts) != 2 or not all(split_parts):
+                    errors.append(f"{path}: ingest_range must be START → END")
+                    parts = None
+                else:
+                    parts = (split_parts[0], split_parts[1])
+
+            if parts is not None:
+                range_errors = [
+                    scalar_error(path, field_name, value, allow_empty=True)
+                    for field_name, value in zip(flat_range_fields, parts)
+                ]
+                errors.extend(error for error in range_errors if error)
+                if not any(range_errors):
+                    removed.append("ingest_range")
+                    proposed.extend(
+                        (
+                            (field_name, (f"{field_name}: {value}",))
+                            for field_name, value in zip(flat_range_fields, parts)
+                        )
+                    )
+        else:
+            for field_name in flat_range_fields:
+                value = frontmatter.get(field_name)
+                if value is None:
+                    proposed.append((field_name, (f'{field_name}: ""',)))
+                else:
+                    error = scalar_error(path, field_name, value, allow_empty=True)
                     if error:
                         errors.append(error)
-        else:
-            range_value = unquote_scalar(ingest_range)
-            parts = [part.strip() for part in range_value.split("→")]
-            if len(parts) != 2 or not all(parts):
-                errors.append(f"{path}: ingest_range must be START → END")
-            else:
-                removed.append("ingest_range")
-                proposed.append(
-                    (
-                        "ingest_range",
-                        ("ingest_range:", f"  start: {parts[0]}", f"  end: {parts[1]}"),
-                    )
-                )
 
     return tuple(proposed), tuple(removed)
 

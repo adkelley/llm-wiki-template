@@ -1712,13 +1712,14 @@ class MigrateV2Tests(unittest.TestCase):
         self.assertIn(b'title: "Machine Learning"\r\n', migrated)
         self.assertIn(b'subjects:\r\n  - "[[Machine Learning]]"\r\n', migrated)
         self.assertIn(
-            b"ingest_range:\r\n  start: 2026-01-01\r\n  end: 2026-02-03\r\n",
+            b"ingest_start: 2026-01-01\r\ningest_end: 2026-02-03\r\n",
             migrated,
         )
+        self.assertNotIn(b"ingest_range:", migrated)
         self.assertNotIn(b"\n", migrated.replace(b"\r\n", b""))
         self.assertNotIn(b"concept:", migrated)
 
-    def test_trace_existing_title_and_subjects_take_precedence(self) -> None:
+    def test_trace_repairs_nested_ingest_range(self) -> None:
         self.entities_dir.mkdir()
         path = self.write_work_page(
             "trace",
@@ -1746,6 +1747,68 @@ class MigrateV2Tests(unittest.TestCase):
         self.assertIn('title: "Evidence Trail"', rendered)
         self.assertIn('  - "[[Canonical Concept]]"', rendered)
         self.assertNotIn("Legacy Concept", rendered)
+        self.assertIn("ingest_start: 2026-01-01", rendered)
+        self.assertIn("ingest_end: 2026-02-01", rendered)
+        self.assertNotIn("ingest_range:", rendered)
+
+    def test_trace_current_ingest_fields_are_idempotent(self) -> None:
+        self.entities_dir.mkdir()
+        path = self.write_work_page(
+            "trace",
+            'title: "Evidence Trail"',
+            "sources: []",
+            "subjects: []",
+            "related: []",
+            'question: "How?"',
+            "origin: manual",
+            "status: active",
+            "confidence: medium",
+            "ingest_start: 2026-01-01",
+            "ingest_end: 2026-02-01",
+            "created: 2026-01-01",
+            "updated: 2026-02-01",
+        )
+
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        page = next(page for page in migration.pages if page.path == path)
+
+        self.assertTrue(migration.is_valid)
+        self.assertFalse(page.needs_change)
+
+    def test_trace_adds_only_missing_flat_ingest_field(self) -> None:
+        self.entities_dir.mkdir()
+        path = self.write_work_page(
+            "trace",
+            'title: "Evidence Trail"',
+            "sources: []",
+            "ingest_start: 2026-01-01",
+            "created: 2026-01-01",
+            "updated: 2026-02-01",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+        page = next(page for page in migration.pages if page.path == path)
+        rendered = migrate_v2.render_page(page)
+
+        self.assertTrue(migration.is_valid)
+        self.assertEqual(rendered.count("ingest_start:"), 1)
+        self.assertIn("ingest_start: 2026-01-01", rendered)
+        self.assertIn('ingest_end: ""', rendered)
+
+    def test_trace_rejects_legacy_and_flat_ingest_fields_together(self) -> None:
+        self.entities_dir.mkdir()
+        self.write_work_page(
+            "trace",
+            'title: "Evidence Trail"',
+            "sources: []",
+            "ingest_range: 2026-01-01 → 2026-02-01",
+            "ingest_start: 2026-01-01",
+            "created: 2026-01-01",
+            "updated: 2026-02-01",
+        )
+        migration = migrate_v2.build_migration_plan(self.entities_dir)
+
+        self.assertFalse(migration.is_valid)
+        self.assertTrue(any("must not coexist" in error for error in migration.errors))
 
     def test_trace_rejects_malformed_legacy_range(self) -> None:
         self.entities_dir.mkdir()
