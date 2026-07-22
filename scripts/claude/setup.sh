@@ -24,6 +24,27 @@ yes_no_prompt() {
   done
 }
 
+yes_no_default_yes_prompt() {
+  local prompt="$1"
+  local response
+
+  while true; do
+    read -r -p "$prompt (Y/n): " response
+
+    case "$response" in
+      ""|y|Y|yes|YES)
+        return 0
+        ;;
+      n|N|no|NO)
+        return 1
+        ;;
+      *)
+        echo "Please answer yes or no."
+        ;;
+    esac
+  done
+}
+
 prompt_for_domain() {
   local domain
 
@@ -53,24 +74,62 @@ domain = sys.argv[2]
 text = path.read_text()
 
 heading = "## Domain\n"
-placeholder = '[Enter your wiki subject here example - "AI LLM Research, May 2026 -"]'
 
 if heading not in text:
     raise SystemExit(f"Domain heading not found in {path}")
 
 before, after = text.split(heading, 1)
+section_end = after.find("\n## ")
 
-if placeholder not in after:
-    raise SystemExit(f"Domain placeholder not found in {path}")
+if section_end == -1:
+    raise SystemExit(f"End of Domain section not found in {path}")
 
-after = after.replace(placeholder, domain, 1)
+after = domain + "\n" + after[section_end:]
 path.write_text(before + heading + after)
+PY
+}
+
+read_domain() {
+  local target_file="$1"
+
+  python3 - "$target_file" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+heading = "## Domain\n"
+
+if heading not in text:
+    raise SystemExit(0)
+
+after = text.split(heading, 1)[1]
+section_end = after.find("\n## ")
+if section_end == -1:
+    raise SystemExit(0)
+
+domain = after[:section_end].strip()
+if domain.startswith("[Enter your wiki subject here"):
+    raise SystemExit(0)
+
+print(domain)
 PY
 }
 
 configure_domain() {
   local target_file="$1"
+  local existing_domain="${2:-}"
+  local target_name="${3:-$(basename "$target_file")}"
   local domain
+
+  if [ -n "$existing_domain" ]; then
+    echo "Existing wiki domain: $existing_domain"
+    if yes_no_default_yes_prompt "Copy this domain into the new $target_name?"; then
+      apply_domain "$target_file" "$existing_domain"
+      echo "Copied existing wiki domain to the new $target_name"
+      return 0
+    fi
+  fi
 
   domain="$(prompt_for_domain)"
 
@@ -231,6 +290,7 @@ install_managed_template() {
   local target_name="$3"
   local status
   local backup_file
+  local existing_domain
 
   status="$(template_status "$template_file" "$target_file")"
 
@@ -242,8 +302,9 @@ install_managed_template() {
       echo "Copied $target_name to $target_file"
       ;;
     replace)
+      existing_domain="$(read_domain "$target_file")"
       cp "$template_file" "$target_file"
-      configure_domain "$target_file"
+      configure_domain "$target_file" "$existing_domain" "$target_name"
       record_installed_template "$template_file" "$target_file"
       echo "Updated $target_name from the latest template"
       ;;
@@ -256,11 +317,12 @@ install_managed_template() {
       ;;
     preserve)
       if yes_no_prompt "$target_name has local changes. Replace it with the latest template?"; then
+        existing_domain="$(read_domain "$target_file")"
         backup_file="$target_file.backup-$(date +%Y%m%d-%H%M%S)"
         cp "$target_file" "$backup_file"
         echo "Backed up $target_name to $backup_file"
         cp "$template_file" "$target_file"
-        configure_domain "$target_file"
+        configure_domain "$target_file" "$existing_domain" "$target_name"
         record_installed_template "$template_file" "$target_file"
         echo "Updated $target_name from the latest template; backup saved to $backup_file"
       else
