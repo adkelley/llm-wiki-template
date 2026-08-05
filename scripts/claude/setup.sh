@@ -116,6 +116,22 @@ print(domain)
 PY
 }
 
+normalize_domain() {
+  local domain="$1"
+
+  python3 - "$domain" <<'PY'
+import re
+import sys
+import unicodedata
+
+domain = sys.argv[1]
+normalized_domain = unicodedata.normalize("NFKD", domain)
+ascii_domain = normalized_domain.encode("ascii", "ignore").decode("ascii")
+slug = re.sub(r'[^a-z0-9]+', '-', ascii_domain.lower()).strip("-")
+print(slug)
+PY
+}
+
 configure_domain() {
   local target_file="$1"
   local existing_domain="${2:-}"
@@ -139,6 +155,443 @@ configure_domain() {
   else
     echo "Left the Domain placeholder unchanged"
   fi
+}
+
+resolve_recall_collection_name() {
+  local domain_file="$1"
+  local domain
+  local collection_name
+
+  domain="$(read_domain "$domain_file")"
+  if [ -z "$domain" ]; then
+    printf 'No Domain is configured in %s. Configure ## Domain and rerun setup.sh\n' \
+      "$(basename "$domain_file")" >&2
+    return 1
+  fi
+
+  collection_name="$(normalize_domain "$domain")"
+  if [ -z "$collection_name" ]; then
+    printf 'The Domain in %s does not produce a usable collection name. Configure ## Domain and rerun setup.sh\n' \
+      "$(basename "$domain_file")" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$collection_name"
+}
+
+ensure_qmd_available() {
+  if command -v qmd >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! yes_no_prompt \
+    "This skill requires qmd to be installed. Install qmd?"; then
+    echo "Skipped installing qmd"
+    echo "Install it manually with: npm install -g @tobilu/qmd"
+    return 1
+  fi
+
+  if ! npm install -g @tobilu/qmd; then
+    echo "Failed to install qmd."
+    echo "Retry manually with: npm install -g @tobilu/qmd"
+    return 1
+  fi
+
+  if ! command -v qmd >/dev/null 2>&1; then
+    echo "qmd was installed, but it is not available on PATH."
+    echo "Verify the npm global bin directory, then rerun setup.sh."
+    return 1
+  fi
+
+  echo "qmd installed successfully"
+  return 0
+}
+
+canonicalize_directory() {
+  local directory="$1"
+
+  if [ ! -d "$directory" ]; then
+    printf 'Directory not found: %s\n' "$directory" >&2
+    return 1
+  fi
+
+  (cd "$directory" && pwd -P)
+}
+
+parse_qmd_collection_names() {
+  local output="$1"
+
+  python3 - "$output" <<'PY'
+import re
+import sys
+
+output = sys.argv[1]
+lines = output.splitlines()
+
+if output.strip() == "No collections found. Run 'qmd collection add .' to create one.":
+    raise SystemExit(0)
+
+if not lines:
+    print("Unable to parse qmd collection list: empty output", file=sys.stderr)
+    raise SystemExit(1)
+
+header_match = re.fullmatch(r"Collections \((\d+)\):", lines[0])
+
+if not header_match:
+    print("Unable to parse qmd collection list header", file=sys.stderr)
+    raise SystemExit(1)
+
+expected_count = int(header_match.group(1))
+names = []
+seen = set()
+saw_collection = False
+
+for line in lines[1:]:
+    if not line:
+        continue
+
+    collection_match = re.fullmatch(
+        r"(.+?) \(qmd://([^/]+)/\)(?: \[excluded\])?",
+        line,
+    )
+
+    if collection_match:
+        display_name = collection_match.group(1)
+        uri_name = collection_match.group(2)
+
+        if display_name != uri_name:
+            print(
+                f"Collection name mismatch: {display_name!r} != {uri_name!r}",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+
+        if display_name in seen:
+            print(
+                f"Duplicate collection name: {display_name!r}",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+        seen.add(display_name)
+        names.append(display_name)
+        saw_collection = True
+        continue
+
+    detail_match = re.fullmatch(
+        r"  (?:Pattern|Ignore|Files|Updated):.*",
+        line,
+    )
+
+    if detail_match:
+        if not saw_collection:
+            print(
+                f"Expected collection name before details: {line!r}",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+
+        continue
+
+    print(
+        f"Unable to parse qmd collection list line: {line!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+if len(names) != expected_count:
+    print(
+        f"Expected {expected_count} collections, but found {len(names)}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+for name in names:
+    print(name)
+PY
+}
+
+list_qmd_collection_names() {
+  local output
+
+  if ! output="$(NO_COLOR=1 qmd collection list)"; then
+    printf 'Unable to inspect qmd collections.\n' >&2
+    printf 'Run these diagnostic commands:\n' >&2
+    printf '  qmd collection list\n' >&2
+    printf '  qmd status\n' >&2
+    return 1
+  fi
+
+  if ! parse_qmd_collection_names "$output"; then
+    printf 'Unable to safely interpret qmd collection output.\n' >&2
+    printf 'Run these diagnostic commands:\n' >&2
+    printf '  NO_COLOR=1 qmd collection list\n' >&2
+    printf '  qmd status\n' >&2
+    return 1
+  fi
+}
+
+parse_qmd_collection_path() {
+  local output="$1"
+  local expected_name="$2"
+
+  python3 - "$output" "$expected_name" <<'PY'
+import re
+import sys
+
+output = sys.argv[1]
+expected_name = sys.argv[2]
+lines = output.splitlines()
+
+if not lines:
+    print("Unable to parse qmd collection path: empty output", file=sys.stderr)
+    raise SystemExit(1)
+
+header_match = re.fullmatch(r"Collection: (.+)", lines[0])
+
+if not header_match:
+    print("Unable to parse qmd collection path header", file=sys.stderr)
+    raise SystemExit(1)
+
+actual_name = header_match.group(1).strip()
+if actual_name != expected_name:
+    print(
+        f"qmd collection name mismatch: expected {expected_name!r}, "
+        f"got {actual_name!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+collection_path = None
+for line in lines[1:]:
+    if not line:
+        continue
+
+    path_match = re.fullmatch(r"  Path:\s+(.+)", line)
+    if path_match:
+        if collection_path is not None:
+            print("Multiple path entries found for qmd collection", file=sys.stderr)
+            raise SystemExit(1)
+
+        collection_path = path_match.group(1).strip()
+
+        if not collection_path:
+            print("qmd collection path is empty", file=sys.stderr)
+            raise SystemExit(1)
+
+        continue
+
+    detail_match = re.fullmatch(
+        r"  (?:Pattern|Include|Update|Contexts):\s+.*",
+        line,
+    )
+
+    if detail_match:
+        continue
+
+    print(
+        f"Unable to parse qmd collection detail: {line!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+if collection_path is None:
+    print("Unable to parse qmd collection path", file=sys.stderr)
+    raise SystemExit(1)
+
+print(collection_path)
+PY
+}
+
+get_qmd_collection_path() {
+  local collection_name="$1"
+  local output
+
+  if ! output="$(NO_COLOR=1 qmd collection show "$collection_name")"; then
+    printf 'Unable to inspect qmd collection %s.\n' \
+      "$collection_name" >&2
+    printf 'Run these diagnostic commands:\n' >&2
+    printf '  qmd collection show %s\n' "$collection_name" >&2
+    printf '  qmd collection list\n' >&2
+    return 1
+  fi
+
+  if ! parse_qmd_collection_path "$output" "$collection_name"; then
+    printf 'Unable to safely interpret qmd collection %s.\n' \
+      "$collection_name" >&2
+    printf 'Run these diagnostic commands:\n' >&2
+    printf '  NO_COLOR=1 qmd collection show %s\n' \
+      "$collection_name" >&2
+    printf '  NO_COLOR=1 qmd collection list\n' >&2
+    return 1
+  fi
+}
+
+resolve_or_add_qmd_collection() {
+  local wiki_path="$1"
+  local derived_name="$2"
+  local names_output
+  local collection_name
+  local registered_path
+  local canonical_registered_path
+  local matching_path_name=""
+  local derived_name_path=""
+
+  if ! names_output="$(list_qmd_collection_names)"; then
+    return 1
+  fi
+
+  while IFS= read -r collection_name; do
+    [ -z "$collection_name" ] && continue
+
+    registered_path="$(get_qmd_collection_path "$collection_name")" || return 1
+
+    if ! canonical_registered_path="$(canonicalize_directory "$registered_path")"; then
+      printf 'Unable to canonicalize registered path for qmd collection %s\n' \
+        "$collection_name" >&2
+      return 1
+    fi
+
+    # Record same-path and derived-name matches here
+    if [ "$canonical_registered_path" = "$wiki_path" ]; then
+      if [ -n "$matching_path_name" ]; then
+        printf 'Multiple qmd collections point to %s: %s and %s.\n' \
+          "$wiki_path" "$matching_path_name" "$collection_name" >&2
+          printf 'No qmd collections were modified.\n' >&2
+          return 1
+      fi
+        matching_path_name="$collection_name"
+    fi
+
+    if [ "$derived_name" = "$collection_name" ]; then
+      derived_name_path="$canonical_registered_path"
+    fi
+  done <<< "$names_output"
+
+  if [ -n "$matching_path_name" ]; then
+    printf '%s\n' "$matching_path_name"
+    return 0
+  fi
+
+  if [ -n "$derived_name_path" ]; then
+    printf 'qmd collection name %s already points to %s.\n' \
+      "$derived_name" "$derived_name_path" >&2
+    printf 'The current wiki path is %s. No collections were modified.\n' \
+      "$wiki_path" >&2
+    printf 'Inspect with: qmd collection show %s\n' \
+      "$derived_name" >&2
+    return 1
+  fi
+
+  if ! qmd collection add "$wiki_path" --name "$derived_name" >&2; then
+    printf 'Failed to add qmd collection %s for %s.\n' \
+      "$derived_name" "$wiki_path" >&2
+    printf 'Inspect with: qmd collection list\n' >&2
+    return 1
+  fi
+
+  printf '%s\n' "$derived_name"
+  return 0
+}
+
+prepare_qmd_collection() {
+  local collection_name="$1"
+  local domain="$2"
+  local context
+
+  context="Maintained wiki pages for ${domain}. This collection contains wiki pages only; it does not contain raw source material or repository configuration."
+
+  # context, update, embed
+  if ! qmd context add "qmd://$collection_name" "$context"; then
+    printf 'Failed to add context for qmd collection %s\n' \
+      "$collection_name" >&2
+    printf 'Retry with: qmd context add %q %q\n' \
+      "qmd://$collection_name" "$context" >&2
+    return 1
+  fi
+
+  if ! qmd update; then
+    printf 'Failed to update qmd collections.\n' >&2
+    printf 'Retry with: qmd update\n' >&2
+    return 1
+  fi
+
+  if ! qmd embed; then
+    printf 'Failed to embed qmd collections.\n' >&2
+    printf 'Retry with: qmd embed\n' >&2
+    return 1
+  fi
+
+  return 0
+}
+
+initialize_recall_skill() {
+  local destination_path="$1"
+  local domain_file="$2"
+  local config_file="$destination_path/config.md"
+  local domain
+  local derived_name
+  local wiki_path
+  local collection_name
+
+  if [ -f "$config_file" ]; then
+    printf 'Preserved existing recall configuration: %s\n' "$config_file"
+    return 0
+  fi
+
+  if ! derived_name="$(resolve_recall_collection_name "$domain_file")"; then
+    return 1
+  fi
+
+  domain="$(read_domain "$domain_file")"
+
+  if ! ensure_qmd_available; then
+    return 1
+  fi
+
+  if ! wiki_path="$(canonicalize_directory "$repo_root/wiki")"; then
+    return 1
+  fi
+
+  if ! collection_name="$(
+    resolve_or_add_qmd_collection "$wiki_path" "$derived_name"
+  )"; then
+    return 1
+  fi
+
+  if ! prepare_qmd_collection "$collection_name" "$domain"; then
+    return 1
+  fi
+
+  write_recall_config "$destination_path" "$collection_name"
+}
+
+write_recall_config() {
+  local destination_path="$1"
+  local collection_name="$2"
+  local config_file="$destination_path/config.md"
+
+  printf '# Recall configuration\n\nqmd_collection: %s\n' \
+    "$collection_name" > "$config_file"
+
+  printf 'Configured recall to use qmd collection: %s\n' \
+    "$collection_name"
+}
+
+initialize_optional_skill() {
+  local skill_name="$1"
+  local destination_path="$2"
+  local domain_file="$3"
+
+  if [ "$skill_name" != "recall" ]; then
+    return 0
+  fi
+
+  if ! initialize_recall_skill "$destination_path" "$domain_file"; then
+    printf 'Recall was installed, but qmd initialization did not complete.\n'
+    printf 'Review the diagnostics above, then rerun setup.sh.\n'
+  fi
+
+  return 0
 }
 
 install_raw_protection_hook() {
@@ -246,21 +699,31 @@ update_existing_skill() {
   local destination_path="$2"
   local skill_name="$3"
 
-  sync_skill_files "$skill_path" "$destination_path"
+  sync_skill_files "$skill_path" "$destination_path" true
   echo "Updated $skill_name files"
 }
 
 sync_skill_files() {
   local skill_path="$1"
   local destination_path="$2"
+  local preserve_config="${3:-false}"
 
   mkdir -p "$destination_path"
-  rsync -a --delete \
-    --exclude 'config.toml' \
-    --exclude 'state.jsonl' \
-    --exclude 'last_scan.txt' \
-    --exclude '__pycache__/' \
-    --exclude '*.pyc' \
+  local -a rsync_args=(
+    -a
+    --delete
+    --exclude 'config.toml'
+    --exclude 'state.jsonl'
+    --exclude 'last_scan.txt'
+    --exclude '__pycache__/'
+    --exclude '*.pyc'
+  )
+
+  if [[ "$preserve_config" == "true" ]]; then
+    rsync_args+=(--exclude 'config.md')
+  fi
+
+  rsync "${rsync_args[@]}" \
     "$skill_path/" "$destination_path/"
 }
 
@@ -381,6 +844,7 @@ install_optional_skills() {
   local metadata
   local skill_display_name
   local skill_description
+  local domain_file="$repo_root/CLAUDE.md"
 
   mkdir -p "$target_skills_dir"
 
@@ -449,6 +913,7 @@ install_optional_skills() {
       case "$answer" in
         y|Y|yes|YES)
           update_existing_skill "$skill_path" "$destination_path" "$skill_name"
+          initialize_optional_skill "$skill_name" "$destination_path" "$domain_file"
           ;;
         q|Q|quit|QUIT)
           echo "Stopped installing optional skills."
@@ -464,6 +929,7 @@ install_optional_skills() {
       case "$answer" in
         y|Y|yes|YES)
           install_new_skill "$skill_path" "$destination_path" "$skill_name"
+          initialize_optional_skill "$skill_name" "$destination_path" "$domain_file"
           ;;
         q|Q|quit|QUIT)
           echo "Stopped installing optional skills."

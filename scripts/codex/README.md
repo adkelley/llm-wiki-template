@@ -28,11 +28,16 @@ Shared optional skills are available under `scripts/optional-skills/`.
 During setup, you can choose to:
 
 - install new optional skills into `./skills/`
-- update existing optional skills by replacing only their `SKILL.md`
+- update existing optional skills by synchronizing maintained files while
+  preserving local configuration and state
 - review all optional skills before deciding whether to install or update each one
 - skip optional skill installation and updates entirely
 
-When updating an existing skill, the setup script preserves files such as `config.md` and `processed.txt`.
+When updating an existing skill, the setup script preserves files such as
+`config.md`, `config.toml`, `state.jsonl`, and `last_scan.txt`.
+
+See the [optional-skills catalog](../README.md#available-skills) for the current
+list and dependency notes.
 
 ## After setup
 
