@@ -231,6 +231,9 @@ For more details, see `scripts/obsidian/README.md`.
 
 Shared optional skills live under `scripts/optional-skills/`.
 
+See the [optional-skills catalog](scripts/README.md#available-skills) for the
+current list, purpose, and dependency notes.
+
 Depending on the setup flow you choose, installer scripts may copy selected skills into:
 
 - `.claude/skills/` for Claude Code

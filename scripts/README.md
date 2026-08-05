@@ -181,6 +181,10 @@ cleans the WebVTT text, and writes a raw Markdown source file:
 scripts/wiki/youtube_transcript.py
 ```
 
+The [`ingest-youtube`](optional-skills/ingest-youtube/) optional skill provides
+an agent workflow around this shared utility. The utility can also be run
+directly as documented below.
+
 It depends on `yt-dlp` being installed separately. Install `yt-dlp` using the
 official instructions for your operating system, then confirm it works:
 
@@ -431,4 +435,42 @@ For installation steps, see `scripts/obsidian/README.md`.
 
 Shared optional skills are located under `scripts/optional-skills/`.
 
-Some setup scripts may copy selected skills from this repository into the tool-specific skills directory during installation.
+The Codex and Claude setup scripts can install selected skills into the
+tool-specific skills directory. Updates synchronize maintained skill files
+while preserving local configuration and state files.
+
+### Available skills
+
+- [`close`](optional-skills/close/) — Close an evening session by recording
+  decisions in the wiki and appending to `wiki/log.md`.
+- [`defuddle`](optional-skills/defuddle/) — Capture a web article as clean,
+  provenance-rich Markdown in `raw/`; requires the Defuddle CLI.
+- [`ghost`](optional-skills/ghost/) — Study the wiki and raw notes to write or
+  rewrite text in the user's established voice.
+- [`ingest-apple-notes`](optional-skills/ingest-apple-notes/) — Review recent
+  Apple Notes and export approved notes into `raw/`; requires macOS and
+  `apple-notes-parser`.
+- [`ingest-just-record`](optional-skills/ingest-just-record/) — Provides the
+  `ingest-voice` skill for transcribing Just Press Record voice memos; designed
+  for macOS and local or API-backed Whisper.
+- [`ingest-mail`](optional-skills/ingest-mail/) — Review mail through the
+  read-only Himalaya CLI workflow and ingest approved messages.
+- [`ingest-otter-transcript`](optional-skills/ingest-otter-transcript/) — Fetch
+  Otter.ai conversations through the Public API and preserve transcripts in
+  `raw/`; requires `OTTER_API_KEY`.
+- [`ingest-youtube`](optional-skills/ingest-youtube/) — Capture YouTube captions
+  through the shared transcript utility; requires `yt-dlp`.
+- [`my_world`](optional-skills/my_world/) — Start a session with a briefing from
+  the wiki index, log, and current state.
+- [`recall`](optional-skills/recall/) — Query only this wiki's configured qmd
+  collection; qmd setup is handled during skill installation.
+- [`scan-raw`](optional-skills/scan-raw/) — Find un-ingested files in `raw/` and
+  offer the guarded ingest workflow.
+- [`today`](optional-skills/today/) — Produce a morning briefing with three
+  priorities grounded in current wiki state.
+- [`trace`](optional-skills/trace/) — Reconstruct how a concept evolved across
+  the wiki and save the resulting trace.
+
+Each skill's `SKILL.md` is authoritative for agent behavior. Skill-local
+READMEs provide additional human setup instructions where dependencies or
+configuration warrant them.

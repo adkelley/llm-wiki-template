@@ -1,31 +1,55 @@
 ---
 name: recall
-description:  Queries the wiki for pages related to the specified `topic`. It is triggered when the user runs `/recall [topic]` or asks Claude to “reload [topic]” or “query [topic].” The command uses `qmd` to perform the search, parses the output, and preloads the five most relevant wiki pages into context before generating a response. This helps ensure responses are grounded in existing wiki content rather than inferred from prior training alone.
+description: Query the maintained wiki for pages related to a topic using a configured qmd collection. Use when the user runs `/recall` with a topic or asks to recall, reload, or query existing wiki knowledge.
 ---
-# Recall — Query a Topic from the Wiki
 
-Triggered by `/recall <topic>` or equivalent phrasing, where `<topic>` is the search topic to query. It uses `qmd` an on-device search engine for markdown files that combinines three strategies:
+# Recall wiki knowledge
 
-- BM25 full-text search — keyword precision.
-- Vector semantic search — finds conceptually related pages even without keyword match.
-- LLM re-ranking — highest quality; LLM scores results for relevance.
-- All models run locally via node-llama-cpp with GGUF models. No data leaves your machine.
+Use qmd to retrieve relevant maintained wiki pages before answering.
 
-## What to do
+## Read the configuration
 
-### 1. Run qmd
+Locate `config.md` in the same skill directory as this `SKILL.md`. Read exactly one nonempty setting in this form:
 
-run:
-`npx qmd query "{topic}" --json`
+```text
+qmd_collection: collection-name
+```
 
-If `qmd` fails to run (e.g., not in user's path), then 1) inform the user that `qmd` doesn't exist or is not in their path.  Moreover, inform the user that information on `qmd`, including installation information, can be found at: [tobi/qmd](https://github.com/tobi/qmd). 2) Stop
+If `config.md` is missing, the setting is empty or malformed, or more than one `qmd_collection` setting exists, explain that recall is not configured and tell the user to rerun the appropriate Codex or Claude `setup.sh`. Stop without running qmd. Never fall back to querying all collections.
 
-### 2. Parse the output
+## Query the configured collection
 
-Parse the output and pre-load the top 5 most relevant wiki pages
-into context before responding. This ensures answers are grounded
-in existing wiki knowledge rather than hallucinated from training data.
+Use hybrid retrieval by default:
 
-### 3. Respond to the user
+```bash
+qmd query "$topic" --collection "$qmd_collection" --json
+```
 
-Respond to the user with an answer that's grounded in existing wiki knowledge as described in the previous step
+Use a different mode only when it better fits the request:
+
+```bash
+# Faster keyword lookup
+qmd search "$topic" --collection "$qmd_collection" --json
+
+# Faster semantic lookup
+qmd vsearch "$topic" --collection "$qmd_collection" --json
+```
+
+Always pass `--collection "$qmd_collection"`. Never issue a query, search, or vector search without the configured collection.
+
+If qmd is missing or any retrieval command fails, report the failure and stop. Tell the user to verify `qmd --version`, inspect `qmd collection list`, and rerun setup if the configured collection is unavailable.
+
+## Answer from retrieved pages
+
+Parse the JSON results and load the five most relevant wiki pages into context. Answer from that wiki knowledge, distinguish retrieved facts from inference, and say when the wiki does not contain enough information.
+
+## Maintain the index
+
+After wiki content changes, run:
+
+```bash
+qmd update
+qmd embed
+```
+
+These commands update all configured collections, but incrementally process changed or unembedded content.
