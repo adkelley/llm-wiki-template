@@ -463,7 +463,9 @@ while preserving local configuration and state files.
 - [`my_world`](optional-skills/my_world/) — Start a session with a briefing from
   the wiki index, log, and current state.
 - [`recall`](optional-skills/recall/) — Query only this wiki's configured qmd
-  collection; qmd setup is handled during skill installation.
+  collection. During initial installation, setup derives a default collection
+  name from `## Domain`, allows an override, registers `wiki/`, and adds concise
+  Domain-based collection context.
 - [`scan-raw`](optional-skills/scan-raw/) — Find un-ingested files in `raw/` and
   offer the guarded ingest workflow.
 - [`today`](optional-skills/today/) — Produce a morning briefing with three

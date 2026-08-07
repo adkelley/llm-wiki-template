@@ -179,6 +179,33 @@ resolve_recall_collection_name() {
   printf '%s\n' "$collection_name"
 }
 
+prompt_for_recall_collection_name() {
+  local default_name="$1"
+  local collection_name
+
+  while true; do
+    if ! IFS= read -r -p \
+      "qmd collection name [$default_name]: " collection_name; then
+      printf '\nUnable to read the qmd collection name.\n' >&2
+      return 1
+    fi
+
+    # Pressing Enter accepts the Domain-derived collection name
+    if [ -z "$collection_name" ]; then
+      printf '%s\n' "$default_name"
+      return 0
+    fi
+
+    if [[ "$collection_name" =~ ^[A-Za-z0-9_-]+$ ]]; then
+      printf '%s\n' "$collection_name"
+      return 0
+    fi
+
+    printf 'Invalid qmd collection name: %s\n' "$collection_name" >&2
+    printf 'Use only letters, digits, hyphens, and underscores.\n' >&2
+  done
+}
+
 ensure_qmd_available() {
   if command -v qmd >/dev/null 2>&1; then
     return 0
@@ -498,7 +525,7 @@ prepare_qmd_collection() {
   local domain="$2"
   local context
 
-  context="Maintained wiki pages for ${domain}. This collection contains wiki pages only; it does not contain raw source material or repository configuration."
+  context="Curated wiki about ${domain}, containing maintained knowledge pages and durable analysis."
 
   # context, update, embed
   if ! qmd context add "qmd://$collection_name" "$context"; then
@@ -515,9 +542,11 @@ prepare_qmd_collection() {
     return 1
   fi
 
-  if ! qmd embed; then
-    printf 'Failed to embed qmd collections.\n' >&2
-    printf 'Retry with: qmd embed\n' >&2
+  if ! qmd embed --collection "$collection_name"; then
+    printf 'Failed to embed qmd collection %s.\n' \
+      "$collection_name" >&2
+    printf 'Retry with: qmd embed --collection %q\n' \
+      "$collection_name" >&2
     return 1
   fi
 
@@ -532,6 +561,7 @@ initialize_recall_skill() {
   local derived_name
   local wiki_path
   local collection_name
+  local selected_name
 
   if [ -f "$config_file" ]; then
     printf 'Preserved existing recall configuration: %s\n' "$config_file"
@@ -539,6 +569,10 @@ initialize_recall_skill() {
   fi
 
   if ! derived_name="$(resolve_recall_collection_name "$domain_file")"; then
+    return 1
+  fi
+
+  if ! selected_name="$(prompt_for_recall_collection_name "$derived_name")"; then
     return 1
   fi
 
@@ -553,7 +587,7 @@ initialize_recall_skill() {
   fi
 
   if ! collection_name="$(
-    resolve_or_add_qmd_collection "$wiki_path" "$derived_name"
+    resolve_or_add_qmd_collection "$wiki_path" "$selected_name"
   )"; then
     return 1
   fi

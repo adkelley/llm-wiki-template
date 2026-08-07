@@ -87,6 +87,49 @@ test_domain_helpers() {
   assert_status 1 "$?" "$suite rejects an empty normalized Domain"
 }
 
+test_collection_name_prompt() {
+  local suite="$1"
+  local error_file="$test_root/$suite-collection-prompt.err"
+  local output
+  local status
+
+  output="$(
+    printf '\n' |
+      prompt_for_recall_collection_name 'ai-research' 2>"$error_file"
+  )"
+  status=$?
+  assert_status 0 "$status" "$suite accepts the default collection name"
+  assert_equal 'ai-research' "$output" \
+    "$suite returns the default collection name"
+
+  output="$(
+    printf 'Research_Archive-2026\n' |
+      prompt_for_recall_collection_name 'ai-research' 2>"$error_file"
+  )"
+  status=$?
+  assert_status 0 "$status" "$suite accepts a collection name override"
+  assert_equal 'Research_Archive-2026' "$output" \
+    "$suite preserves the collection name override"
+
+  output="$(
+    printf 'invalid name!\ncustom_name\n' |
+      prompt_for_recall_collection_name 'ai-research' 2>"$error_file"
+  )"
+  status=$?
+  assert_status 0 "$status" "$suite reprompts after an invalid override"
+  assert_equal 'custom_name' "$output" \
+    "$suite returns the valid replacement override"
+  assert_equal \
+    $'Invalid qmd collection name: invalid name!\nUse only letters, digits, hyphens, and underscores.' \
+    "$(cat "$error_file")" \
+    "$suite explains the collection name constraint"
+
+  prompt_for_recall_collection_name 'ai-research' \
+    </dev/null >/dev/null 2>"$error_file"
+  status=$?
+  assert_status 1 "$status" "$suite rejects end-of-input"
+}
+
 test_collection_list_parser() {
   local suite="$1"
   local valid no_collections output
@@ -225,7 +268,7 @@ test_qmd_lifecycle() {
   local log_file="$test_root/$suite-lifecycle.log"
   local context_line
 
-  context_line='context add qmd://ai-wiki Maintained wiki pages for AI Research. This collection contains wiki pages only; it does not contain raw source material or repository configuration.'
+  context_line='context add qmd://ai-wiki Curated wiki about AI Research, containing maintained knowledge pages and durable analysis.'
 
   (
     qmd() { printf '%s\n' "$*" >>"$log_file"; return 0; }
@@ -234,7 +277,7 @@ test_qmd_lifecycle() {
   assert_status 0 "$?" "$suite completes qmd preparation"
   assert_equal "$context_line
 update
-embed" "$(cat "$log_file")" "$suite runs context, update, and embed in order"
+embed --collection ai-wiki" "$(cat "$log_file")" "$suite runs context, update, and embed in order"
 
   : >"$log_file"
   (
@@ -271,7 +314,54 @@ update" "$(cat "$log_file")" "$suite skips embed after update failure"
   assert_status 1 "$?" "$suite reports qmd embed failure"
   assert_equal "$context_line
 update
-embed" "$(cat "$log_file")" "$suite reaches embed only after update"
+embed --collection ai-wiki" "$(cat "$log_file")" \
+  "$suite reaches embed only after update"
+}
+
+test_collection_name_wiring() {
+  local suite="$1"
+  local fixture_dir="$test_root/$suite-name-wiring"
+  local destination="$fixture_dir/recall"
+  local domain_file="$fixture_dir/AGENT.md"
+  local call_log="$fixture_dir/calls.log"
+  local expected_config
+  local canonical_wiki_path
+
+  mkdir -p "$destination" "$fixture_dir/wiki"
+  canonical_wiki_path="$(canonicalize_directory "$fixture_dir/wiki")"
+  printf '## Domain\nM&A Transaction\n\n## Next\n' >"$domain_file"
+
+  (
+    repo_root="$fixture_dir"
+
+    ensure_qmd_available() {
+      return 0
+    }
+
+    resolve_or_add_qmd_collection() {
+      printf 'resolve:%s:%s\n' "$1" "$2" >>"$call_log"
+      printf 'resolved-name\n'
+    }
+
+    prepare_qmd_collection() {
+      printf 'prepare:%s:%s\n' "$1" "$2" >>"$call_log"
+      return 0
+    }
+
+    printf 'custom_name\n' |
+      initialize_recall_skill "$destination" "$domain_file"
+  ) >/dev/null 2>&1
+
+  assert_status 0 "$?" "$suite initializes recall with an override"
+  assert_equal \
+    "resolve:$canonical_wiki_path:custom_name
+prepare:resolved-name:M&A Transaction" \
+    "$(cat "$call_log")" \
+    "$suite passes the override and resolved name through initialization"
+
+  expected_config=$'# Recall configuration\n\nqmd_collection: resolved-name'
+  assert_equal "$expected_config" "$(cat "$destination/config.md")" \
+    "$suite persists the resolved collection name"
 }
 
 test_config_preservation() {
@@ -305,11 +395,13 @@ run_suite() {
   printf '\n== %s ==\n' "$suite"
   load_setup "$setup_file"
   test_domain_helpers "$suite"
+  test_collection_name_prompt "$suite"
   test_collection_list_parser "$suite"
   test_collection_path_parser "$suite"
   test_qmd_availability "$suite"
   test_collection_resolution "$suite"
   test_qmd_lifecycle "$suite"
+  test_collection_name_wiring "$suite"
   test_config_preservation "$suite"
 }
 
