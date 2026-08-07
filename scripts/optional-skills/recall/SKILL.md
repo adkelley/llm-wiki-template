@@ -49,7 +49,9 @@ After wiki content changes, run:
 
 ```bash
 qmd update
-qmd embed
+qmd embed --collection "$qmd_collection"
 ```
 
-These commands update all configured collections, but incrementally process changed or unembedded content.
+`qmd update` incrementally checks all configured collections because it has no
+collection filter. Always restrict `qmd embed` to the configured recall
+collection.

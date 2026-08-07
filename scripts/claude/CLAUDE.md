@@ -621,6 +621,40 @@ future conversations.
 
 Prefer updating an existing work page over creating a duplicate.
 
+## Recall Index Maintenance
+
+Apply this section only when the recall skill is installed and its config file
+exists at:
+
+`.claude/skills/recall/config.md`
+
+The file must contain exactly one valid, nonempty setting in this form:
+
+```yaml
+qmd_collection: collection-name
+```
+
+After an operation creates, modifies, renames, or moves files under `wiki/`,
+read `qmd_collection` from that config file. Once all wiki changes for the
+operation are complete, run:
+
+```bash
+qmd update
+qmd embed --collection "$qmd_collection"
+```
+
+Run these commands once per operation, not after each individual page. `qmd
+update` currently has no collection filter: it incrementally checks all
+registered collections. `qmd embed` must be restricted to this wiki's
+configured collection.
+
+Never derive the collection name from `## Domain`, select another collection,
+run an unscoped `qmd embed`, or modify `index.sqlite` directly. If the recall
+skill or its config is absent, skip qmd maintenance without error. If the
+config is malformed, qmd is unavailable, or either maintenance command fails,
+preserve the wiki changes but report that the recall index may be stale and
+provide the failed command for retry.
+
 ## Ingest Workflow
 When I say "ingest [filename]" or "ingest raw/[path]":
 
@@ -759,5 +793,8 @@ as a normal part of the workflow. Do not wait for the user to ask.
 - NEVER write to `raw/`. This is a hard constraint with no exceptions.
 - NEVER delete wiki pages. Mark as deprecated in frontmatter instead.
 - Always update wiki/index.md and wiki/log.md on every operation.
+- If recall is configured, finish every wiki-changing operation with `qmd
+  update` followed by `qmd embed --collection <configured-name>`; never leave a
+  failed or stale recall index unreported.
 - When uncertain about a claim's accuracy, set `confidence: low`.
 - Cross-reference all new pages to at least 2 existing pages.
