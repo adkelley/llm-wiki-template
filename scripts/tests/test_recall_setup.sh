@@ -332,6 +332,7 @@ test_collection_name_wiring() {
   printf '## Domain\nM&A Transaction\n\n## Next\n' >"$domain_file"
 
   (
+    # shellcheck disable=SC2034  # Used by sourced initialize_recall_skill
     repo_root="$fixture_dir"
 
     ensure_qmd_available() {
