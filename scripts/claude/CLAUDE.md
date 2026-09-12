@@ -101,7 +101,7 @@ related:
   - "[[entity1]]"
   - "[[concept1]]"
   - "[[source1]]"
-confidence: high
+confidence: high # low | medium | high
 ---
 ```
 
@@ -242,9 +242,11 @@ related:
   - "[[entity1]]"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-confidence: high
+confidence: high # low | medium | high
 ---
 ```
+
+The `confidence` value MUST be one of `high`, `medium`, or `low`.
 
 ### Entity Pages (`wiki/entities/`)
 
@@ -314,8 +316,11 @@ question: "How does X compare to Y?"
 origin: query  # query | ingest | migration | manual
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
+confidence: high # low | medium | high
 ---
 ```
+
+The `confidence` value MUST be one of `high`, `medium`, or `low`.
 
 Comparison pages capture a structured analysis of two or more entities,
 concepts, products, companies, technologies, strategies, or sources.

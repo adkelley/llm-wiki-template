@@ -101,7 +101,7 @@ related:
   - "[[entity1]]"
   - "[[concept1]]"
   - "[[source1]]"
-confidence: high
+confidence: high # low | medium | high
 ---
 ```
 
@@ -246,6 +246,8 @@ confidence: high
 ---
 ```
 
+The `confidence` value MUST be one of `high`, `medium`, or `low`.
+
 ### Entity Pages (`wiki/entities/`)
 
 ```yaml
@@ -266,8 +268,11 @@ related:
   - "[[entity2]]"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
+confidence: high # low | medium | high
 ---
 ```
+
+The `confidence` value MUST be one of `high`, `medium`, or `low`.
 
 Concept and entity naming fields follow these rules:
 
@@ -380,9 +385,11 @@ related:
   - "[[trace1]]"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-confidence: high  # high | medium | low
+confidence: high # low | medium | high
 ---
 ```
+
+The `confidence` value MUST be one of `high`, `medium`, or `low`.
 
 The `origin` value MUST be one of `query`, `ingest`, `migration`, or `manual`.
 The `status` value MUST be one of `active`, `superseded`, or `deprecated`.
