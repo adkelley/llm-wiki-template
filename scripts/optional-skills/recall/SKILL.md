@@ -19,20 +19,30 @@ If `config.md` is missing, the setting is empty or malformed, or more than one `
 
 ## Query the configured collection
 
-Use hybrid retrieval by default:
+Use BM25 search by default:
 
 ```bash
-qmd query "$topic" --collection "$qmd_collection" --json
+# Keyword search — fastest (~0.2s), best default for named-entity/proper-noun
+# queries; can miss when the query's wording doesn't overlap the source text
+qmd search "$topic" --collection "$qmd_collection" --json
 ```
 
 Use a different mode only when it better fits the request:
 
 ```bash
-# Faster keyword lookup
-qmd search "$topic" --collection "$qmd_collection" --json
+# Hybrid retrieval without reranking — ~1s; use when BM25 comes up empty or
+# the question is more conceptual/paraphrased than keyword-matchable
+qmd query "$topic" --collection "$qmd_collection" --no-rerank --json
 
-# Faster semantic lookup
+# Vector-only semantic search — timing is inconsistent (~1-17s) and it has
+# returned a wrong top result in testing; use as a secondary fallback, not
+# a first choice
 qmd vsearch "$topic" --collection "$qmd_collection" --json
+
+# Full hybrid retrieval with LLM reranking — slowest (~16-20s) and did not
+# outperform --no-rerank in testing, occasionally ranked worse; reserve for
+# cases specifically validated to need it
+qmd query "$topic" --collection "$qmd_collection" --json
 ```
 
 Always pass `--collection "$qmd_collection"`. Never issue a query, search, or vector search without the configured collection.
