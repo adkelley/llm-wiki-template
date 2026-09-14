@@ -669,6 +669,38 @@ is_valid_skill_dir() {
   [ -d "$dir" ] && [ -f "$dir/SKILL.md" ]
 }
 
+slack_skill_names=(
+  "slackdump"
+  "slackdump-source"
+  "slackdump-sqlite3"
+)
+
+is_slack_bundle_dir() {
+  local dir="$1"
+  local skill_name
+
+  [ "$(basename "$dir")" = "slack" ] || return 1
+  [ -d "$dir" ] || return 1
+
+  for skill_name in "${slack_skill_names[@]}"; do
+    [ -f "$dir/$skill_name/SKILL.md" ] || return 1
+  done
+
+  return 0
+}
+
+slack_bundle_has_installed_skill() {
+  local target_skills_dir="$1"
+
+  for skill_name in "${slack_skill_names[@]}"; do
+    if [ -f "$target_skills_dir/$skill_name/SKILL.md" ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 read_skill_metadata() {
   local skill_md="$1"
 
@@ -735,6 +767,24 @@ update_existing_skill() {
 
   sync_skill_files "$skill_path" "$destination_path" true
   echo "Updated $skill_name files"
+}
+
+install_or_update_slack_bundle() {
+  local bundle_path="$1"
+  local target_skills_dir="$2"
+  local preserve_config="$3"
+  local skill_name
+
+  for skill_name in "${slack_skill_names[@]}"; do
+    local skill_path="$bundle_path/$skill_name"
+    local destination_path="$target_skills_dir/$skill_name"
+
+    if [ "$preserve_config" = "true" ]; then
+      update_existing_skill "$skill_path" "$destination_path" "$skill_name"
+    else
+      install_new_skill "$skill_path" "$destination_path" "$skill_name"
+    fi
+  done
 }
 
 sync_skill_files() {
@@ -861,6 +911,12 @@ install_optional_skills() {
   local metadata
   local skill_display_name
   local skill_description
+  local index
+  local any_existing
+  local all_existing
+  local -a item_skill_names=()
+  local -a item_skill_paths=()
+  local -a item_destination_paths=()
   local domain_file="$repo_root/AGENT.md"
 
   mkdir -p "$target_skills_dir"
@@ -893,74 +949,94 @@ install_optional_skills() {
   esac
 
   for skill_path in "$source_skills_dir"/*; do
-    is_valid_skill_dir "$skill_path" || continue
-    found_any=true
+    item_skill_names=()
+    item_skill_paths=()
+    item_destination_paths=()
 
-    skill_name="$(basename "$skill_path")"
-    destination_path="$target_skills_dir/$skill_name"
-    skill_md="$skill_path/SKILL.md"
-    metadata=$(read_skill_metadata "$skill_md")
-
-    skill_display_name="$(printf '%s\n' "$metadata" | sed -n 's/^NAME=//p')"
-    skill_description="$(printf '%s\n' "$metadata" | sed -n 's/^DESCRIPTION=//p')"
-
-    if [ "$install_mode" = "install" ] && [ -e "$destination_path" ]; then
+    if is_valid_skill_dir "$skill_path"; then
+      skill_name="$(basename "$skill_path")"
+      item_skill_names+=("$skill_name")
+      item_skill_paths+=("$skill_path")
+      item_destination_paths+=("$target_skills_dir/$skill_name")
+      skill_display_name=""
+      skill_description=""
+      found_any=true
+    elif is_slack_bundle_dir "$skill_path"; then
+      for skill_name in "${slack_skill_names[@]}"; do
+        item_skill_names+=("$skill_name")
+        item_skill_paths+=("$skill_path/$skill_name")
+        item_destination_paths+=("$target_skills_dir/$skill_name")
+      done
+      skill_display_name="Slack archive skills"
+      skill_description="Installs slackdump, slackdump-source, and slackdump-sqlite3 together."
+      found_any=true
+    else
       continue
     fi
 
-    if [ "$install_mode" = "update" ] && [ ! -e "$destination_path" ]; then
+    any_existing=false
+    all_existing=true
+    for destination_path in "${item_destination_paths[@]}"; do
+      if [ -e "$destination_path" ]; then
+        any_existing=true
+      else
+        all_existing=false
+      fi
+    done
+
+    if [ "$install_mode" = "install" ] && [ "$all_existing" = true ]; then
       continue
+    fi
+    if [ "$install_mode" = "update" ] && [ "$any_existing" = false ]; then
+      continue
+    fi
+
+    if [ -z "$skill_display_name" ]; then
+      skill_path="${item_skill_paths[0]}"
+      skill_name="${item_skill_names[0]}"
+      metadata="$(read_skill_metadata "$skill_path/SKILL.md")"
+      skill_display_name="$(printf '%s\n' "$metadata" | sed -n 's/^NAME=//p')"
+      skill_description="$(printf '%s\n' "$metadata" | sed -n 's/^DESCRIPTION=//p')"
     fi
 
     shown_any=true
-
     echo
     echo "Optional skill: $skill_display_name"
-    echo "Directory: $skill_name"
-    if [ -n "$skill_description" ]; then
-      echo "Description: $skill_description"
-      echo
+    echo "Directories: ${item_skill_names[*]}"
+    echo "Description: $skill_description"
+
+    if [ "$any_existing" = true ]; then
+      read -r -p "Update this optional skill item, preserving local config/state? [y/N/q]: " answer
     else
-      echo "Description: (none found in SKILL.md)"
+      read -r -p "Install this optional skill item? [y/N/q]: " answer
     fi
 
-    if [ -e "$destination_path" ]; then
-      read -r -p "Update optional skill '$skill_name' files, preserving local config/state? [y/N/q]: " answer
-
-      case "$answer" in
-        y|Y|yes|YES)
-          update_existing_skill "$skill_path" "$destination_path" "$skill_name"
+    case "$answer" in
+      y|Y|yes|YES)
+        for index in "${!item_skill_names[@]}"; do
+          skill_name="${item_skill_names[$index]}"
+          skill_path="${item_skill_paths[$index]}"
+          destination_path="${item_destination_paths[$index]}"
+          if [ "$any_existing" = true ]; then
+            update_existing_skill "$skill_path" "$destination_path" "$skill_name"
+          else
+            install_new_skill "$skill_path" "$destination_path" "$skill_name"
+          fi
           initialize_optional_skill "$skill_name" "$destination_path" "$domain_file"
-          ;;
-        q|Q|quit|QUIT)
-          echo "Stopped installing optional skills."
-          break
-          ;;
-        *)
-          echo "Skipped $skill_name"
-          ;;
-      esac
-    else
-      read -r -p "Install optional skill '$skill_name'? [y/N/q]: " answer
-
-      case "$answer" in
-        y|Y|yes|YES)
-          install_new_skill "$skill_path" "$destination_path" "$skill_name"
-          initialize_optional_skill "$skill_name" "$destination_path" "$domain_file"
-          ;;
-        q|Q|quit|QUIT)
-          echo "Stopped installing optional skills."
-          break
-          ;;
-        *)
-          echo "Skipped $skill_name"
-          ;;
-      esac
-    fi
+        done
+        ;;
+      q|Q|quit|QUIT)
+        echo "Stopped installing optional skills."
+        break
+        ;;
+      *)
+        echo "Skipped $skill_display_name"
+        ;;
+    esac
   done
 
   if [ "$found_any" = false ]; then
-    echo "No top-level optional skills with SKILL.md were found in $source_skills_dir"
+    echo "No optional skills were found in $source_skills_dir"
   elif [ "$shown_any" = false ]; then
     case "$install_mode" in
       install)
