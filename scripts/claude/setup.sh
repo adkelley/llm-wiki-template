@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root=""
 
 slack_skill_names=(
+  "ingest-slack"
   "slackdump"
   "slackdump-source"
   "slackdump-sqlite3"
@@ -680,11 +681,15 @@ is_slack_bundle_dir() {
   local dir="$1"
   local skill_name
 
-  [ "$(basename "$dir")" == "slack" ] || return 1
+  [ "$(basename "$dir")" == "ingest-slack" ] || return 1
   [ -d "$dir" ] || return 1
 
   for skill_name in "${slack_skill_names[@]}"; do
-    [ -f "$dir/$skill_name/SKILL.md" ] || return 1
+    if [ "$skill_name" == "ingest-slack" ]; then
+      [ -f "$dir/SKILL.md" ] || return 1
+    else
+      [ -f "$dir/$skill_name/SKILL.md" ] || return 1
+    fi
   done
   return 0
 }
@@ -981,11 +986,15 @@ install_optional_skills() {
     elif is_slack_bundle_dir "$skill_path"; then
       for skill_name in "${slack_skill_names[@]}"; do
         item_skill_names+=("$skill_name")
-        item_skill_paths+=("$skill_path/$skill_name")
+        if [ "$skill_name" == "ingest-slack" ]; then
+          item_skill_paths+=("$skill_path")
+        else
+          item_skill_paths+=("$skill_path/$skill_name")
+        fi
         item_destination_paths+=("$target_skills_dir/$skill_name")
       done
       skill_display_name="Slack archive skills"
-      skill_description="Installs slackdump, slackdump-source, and slackdump-sqlite3 together."
+      skill_description="Installs ingest-slack and its three Slackdump supporting skills together."
       found_any=true
     else
       continue

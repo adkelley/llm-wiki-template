@@ -2,6 +2,19 @@
 
 This directory contains setup and integration guides for the supported LLM workflows in this repository.
 
+## Slack ingestion
+
+The repository includes an incremental Slack ingestion utility for Slackdump
+SQLite channel archives. Slackdump archives remain immutable under
+`raw/Slack/`; the utility discovers canonical messages, skips messages already
+recorded in each archive’s local manifest, and presents new messages for LLM
+review. The LLM then creates one source page per message under
+`wiki/sources/`.
+
+For archive layout, Slackdump preparation, command usage, manifest behavior,
+and the division of responsibilities between the utility and the LLM, see the
+[Slack ingestion guide](wiki/slack/README.md).
+
 ## Shared Wiki Utilities
 
 Reusable, agent-independent wiki utilities should live under `scripts/wiki/`.

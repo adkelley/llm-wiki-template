@@ -119,10 +119,15 @@ Examples of one source:
 - one earnings-call transcript
 - one investor presentation
 - one email
+- one Slack conversation or thread group
 - one meeting transcript
 
 Do **not** combine multiple independent documents into a single source page,
-even if they were ingested together or concern the same topic.
+even if they were ingested together or concern the same topic. Slack is the
+exception: a parent message and its replies should normally share one source
+page for the conversation or thread group. Standalone Slack messages remain
+separate by default. If adjacent non-threaded messages appear to form one
+coherent conversation, ask the user to approve combining them first.
 
 #### `source_file`
 
@@ -170,7 +175,7 @@ The `source_type` value MUST be one of the values in the following table.
 | `paper` | Academic paper, technical paper, white paper, or research paper. |
 | `report` | Structured analytical or informational report, including analyst reports, annual reports, market reports, and financial reports. |
 | `presentation` | Slide deck or presentation prepared for an audience, including investor decks, conference presentations, and CIMs. |
-| `communication` | Written communication such as an email, memo, letter, announcement, or press release. |
+| `communication` | Written communication such as an email, memo, Slack message, letter, announcement, or press release. |
 | `transcript` | Transcript of spoken communication, including meetings, interviews, earnings calls, webinars, podcasts, and presentations. |
 | `recording` | Audio or video recording when the recording itself is the primary source. |
 | `book` | Book or book chapter. |
@@ -693,6 +698,27 @@ decision rather than just skipping it silently:
 
 - one file: `python3 scripts/wiki/ingest_guard.py skip raw/[path] --reason "..."`
 - a folder or pattern: `python3 scripts/wiki/ingest_guard.py ignore-path "[folder]/"`
+
+### Slack Ingestion
+
+When asked to ingest Slack messages, follow the detailed guide at
+`scripts/optional-skills/ingest-slack/SKILL.md`. Slackdump SQLite archives are immutable inputs
+under `raw/Slack/`; do not modify them and do not use `ingest_guard.py` for
+individual Slack messages. Use `slack_ingest.py threads` to review only
+messages absent from the archive-local Slack manifest. For each selected
+thread group, create one source page under `wiki/sources/` using the normal source
+frontmatter rules, then record every message in the group after the page has
+been successfully written. Ask the user before combining separate non-threaded
+messages. Apply archive-specific Slack `decisions.jsonl` and reusable
+`rules.jsonl` exclusions. Ordinary declines are deferred; only explicit
+permanent-skip requests are recorded. The Slack optional skills provide the operating
+instructions. Use `{title-slug}-slack-{YYYY-MM-DD}-{parent-message-ts}.md` for
+Slack source filenames; all messages in one thread share that path. The
+source body for an approved non-threaded combination begins with an audit block
+listing the channel and ID, message range, message count, and user approval.
+Python utility itself can inspect a
+valid archive without those skills, but the complete LLM workflow requires
+them.
 
 ## Query Workflow
 When I ask a question:

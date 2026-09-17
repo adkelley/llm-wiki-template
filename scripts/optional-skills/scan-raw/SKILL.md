@@ -38,6 +38,12 @@ which already hashes every file under `raw/` and reports `known`, `new`,
 `.llm-wiki/raw-ignore.txt`. This skill is the missing "surface it and ask"
 layer on top of that utility.
 
+When the `ingest-slack` skill bundle is installed, Slack archives receive the
+specialized Slack workflow described by that skill. The bundle is available
+when `ingest-slack`, `slackdump`, `slackdump-source`, and `slackdump-sqlite3`
+are installed together. Do not process Slackdump archives as ordinary raw
+files when the specialized bundle is available.
+
 ## Required Local Files
 
 None. This skill has no config or state of its own — it reuses the core
@@ -82,6 +88,27 @@ Only suggest `index-existing` once, and only when `new_count` looks
 suspiciously close to `file_count` for a wiki that clearly has prior wiki
 pages referencing raw sources. Do not run it without the user's confirmation
 — it writes manifest records for every current file in `raw/`.
+
+### Slack archives
+
+After the general audit, check whether `raw/Slack/` contains Slackdump SQLite
+archives and whether the complete `ingest-slack` bundle is installed. If both
+are true, invoke the `ingest-slack` workflow as part of this scan. It must
+internally discover the archives, read each archive's Slack ingestion manifest,
+present newly discovered Slack thread candidates for user selection, create
+one `wiki/sources/` page per approved message, and record each successful page.
+
+Keep Slack archive files out of the ordinary raw-file approval list; the
+Slack-specific workflow owns their message-level discovery and recording.
+If the Slack bundle is not installed, report that Slack archives were found
+but the specialized workflow is unavailable. Do not infer Slack messages from
+filenames or process the SQLite database as a generic source file.
+
+Apply archive-specific Slack `decisions.jsonl` and `rules.jsonl` files under
+`.llm-wiki/slack/{archive-name}/` during discovery. Record an exclusion only
+when the user explicitly asks not to see matching messages again. A permanent
+thread skip applies to messages currently in the thread; later replies remain
+eligible and should prompt the user about restoring the full thread context.
 
 ## Step 2 - Filter Candidates
 
