@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-set -euo pipefail
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  set -euo pipefail
+fi
 
 repo_root=""
 
@@ -8,7 +10,11 @@ yes_no_prompt() {
   local response
 
   while true; do
-    read -r -p "$prompt (y/N): " response
+    printf '%s ' "$prompt (y/N):"
+    if ! read -r response; then
+      printf '\nUnable to read input; treating this as No.\n' >&2
+      return 1
+    fi
 
     case "$response" in
       y|Y|yes|YES)
@@ -29,7 +35,11 @@ yes_no_default_yes_prompt() {
   local response
 
   while true; do
-    read -r -p "$prompt (Y/n): " response
+    printf '%s ' "$prompt (Y/n):"
+    if ! read -r response; then
+      printf '\nUnable to read input; treating this as No.\n' >&2
+      return 1
+    fi
 
     case "$response" in
       ""|y|Y|yes|YES)
@@ -48,7 +58,11 @@ yes_no_default_yes_prompt() {
 prompt_for_domain() {
   local domain
 
-  read -r -p "Wiki domain or project name (leave blank to configure later): " domain
+  printf '%s ' "Wiki domain or project name (leave blank to configure later):"
+  if ! read -r domain; then
+    printf '\nUnable to read the wiki domain; leaving it unconfigured.\n' >&2
+    return 0
+  fi
 
   # Trim leading/trailing whitespace
   domain="${domain#"${domain%%[![:space:]]*}"}"
@@ -184,8 +198,8 @@ prompt_for_recall_collection_name() {
   local collection_name
 
   while true; do
-    if ! IFS= read -r -p \
-      "qmd collection name [$default_name]: " collection_name; then
+    printf '%s ' "qmd collection name [$default_name]:"
+    if ! IFS= read -r collection_name; then
       printf '\nUnable to read the qmd collection name.\n' >&2
       return 1
     fi
@@ -840,13 +854,13 @@ install_managed_template() {
   local template_file="$1"
   local target_file="$2"
   local target_name="$3"
-  local status
+  local template_state
   local backup_file
   local existing_domain
 
-  status="$(template_status "$template_file" "$target_file")"
+  template_state="$(template_status "$template_file" "$target_file")"
 
-  case "$status" in
+  case "$template_state" in
     missing)
       cp "$template_file" "$target_file"
       configure_domain "$target_file"
@@ -882,7 +896,7 @@ install_managed_template() {
       fi
       ;;
     *)
-      echo "Skipped updating $target_name (unrecognized template status: $status)"
+      echo "Skipped updating $target_name (unrecognized template status: $template_state)"
       ;;
   esac
 }
@@ -919,6 +933,8 @@ install_optional_skills() {
   local index
   local any_existing
   local all_existing
+  local metadata_skill_path
+  local item_base_path
   local -a item_skill_names=()
   local -a item_skill_paths=()
   local -a item_destination_paths=()
@@ -931,7 +947,11 @@ install_optional_skills() {
     return 0
   fi
 
-  read -r -p "Optional skills: [i]nstall new, [u]pdate existing, [r]eview all, or [s]kip? [i/u/r/S]: " install_mode
+  printf '%s ' "Optional skills: [i]nstall new, [u]pdate existing, [r]eview all, or [s]kip? [i/u/r/S]:"
+  if ! read -r install_mode; then
+    printf '\nUnable to read optional-skill choice; skipping optional skills.\n' >&2
+    return 0
+  fi
 
   case "$install_mode" in
     i|I|install|INSTALL|install-new|INSTALL-NEW)
@@ -957,6 +977,7 @@ install_optional_skills() {
     item_skill_names=()
     item_skill_paths=()
     item_destination_paths=()
+    item_base_path="$skill_path"
 
     if is_valid_skill_dir "$skill_path"; then
       skill_name="$(basename "$skill_path")"
@@ -965,6 +986,7 @@ install_optional_skills() {
       item_destination_paths+=("$target_skills_dir/$skill_name")
       skill_display_name=""
       skill_description=""
+      metadata_skill_path="$skill_path"
       found_any=true
     elif is_slack_bundle_dir "$skill_path"; then
       for skill_name in "${slack_skill_names[@]}"; do
@@ -978,6 +1000,7 @@ install_optional_skills() {
       done
       skill_display_name="Slack archive skills"
       skill_description="Installs ingest-slack and its three Slackdump supporting skills together."
+      metadata_skill_path="$skill_path"
       found_any=true
     else
       continue
@@ -1001,9 +1024,7 @@ install_optional_skills() {
     fi
 
     if [ -z "$skill_display_name" ]; then
-      skill_path="${item_skill_paths[0]}"
-      skill_name="${item_skill_names[0]}"
-      metadata="$(read_skill_metadata "$skill_path/SKILL.md")"
+      metadata="$(read_skill_metadata "$metadata_skill_path/SKILL.md")"
       skill_display_name="$(printf '%s\n' "$metadata" | sed -n 's/^NAME=//p')"
       skill_description="$(printf '%s\n' "$metadata" | sed -n 's/^DESCRIPTION=//p')"
     fi
@@ -1015,17 +1036,30 @@ install_optional_skills() {
     echo "Description: $skill_description"
 
     if [ "$any_existing" = true ]; then
-      read -r -p "Update this optional skill item, preserving local config/state? [y/N/q]: " answer
+      printf '%s ' "Update this optional skill item, preserving local config/state? [y/N/q]:"
+      if ! read -r answer; then
+        printf '\nUnable to read skill choice; stopping optional skill installation.\n' >&2
+        break
+      fi
     else
-      read -r -p "Install this optional skill item? [y/N/q]: " answer
+      printf '%s ' "Install this optional skill item? [y/N/q]:"
+      if ! read -r answer; then
+        printf '\nUnable to read skill choice; stopping optional skill installation.\n' >&2
+        break
+      fi
     fi
 
     case "$answer" in
       y|Y|yes|YES)
-        for index in "${!item_skill_names[@]}"; do
-          skill_name="${item_skill_names[$index]}"
-          skill_path="${item_skill_paths[$index]}"
-          destination_path="${item_destination_paths[$index]}"
+        for skill_name in "${item_skill_names[@]}"; do
+          if [ "$skill_display_name" = "Slack archive skills" ] && [ "$skill_name" != "ingest-slack" ]; then
+            skill_path="$item_base_path/$skill_name"
+          elif [ "$skill_display_name" = "Slack archive skills" ]; then
+            skill_path="$item_base_path"
+          else
+            skill_path="$metadata_skill_path"
+          fi
+          destination_path="$target_skills_dir/$skill_name"
           if [ "$any_existing" = true ]; then
             update_existing_skill "$skill_path" "$destination_path" "$skill_name"
           else
@@ -1065,4 +1099,11 @@ main() {
   install_optional_skills
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+else
+  (
+    set -euo pipefail
+    main "$@"
+  )
+fi
