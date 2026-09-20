@@ -259,7 +259,7 @@ The `confidence` value MUST be one of `high`, `medium`, or `low`.
 ---
 type: entity
 entity_id: entity:{slug}
-entity_type: person | company | product | org
+entity_type: person | company | product | product_family | place | university | investment_firm | government_agency | nonprofit | protocol | technical_standard | document | department | event
 canonical_name: "Entity Name"
 aliases: []
 abbreviations: []
@@ -281,19 +281,29 @@ The `confidence` value MUST be one of `high`, `medium`, or `low`.
 
 #### Entity Type Guidance
 
-The `entity_type` value MUST be one of `person`, `company`, `product`, or
-`org`.
+Choose the entity type that best describes what the page represents.
 
-- `person`: an individual.
-- `company`: a named business, subsidiary, or business unit.
-- `product`: a named product, service, model, or product family.
-- `org`: an organization that is not best represented as a company, including
-  a university, government body, nonprofit, protocol community, or event
-  organization.
+The `entity_type` value MUST be one of the values in the following table.
 
-Use the closest valid type. Do not invent new entity types in page
-frontmatter. If the schema needs to expand, propose the change before using a
-new value.
+| Type | Description |
+|------|-------------|
+| `person` | An individual. |
+| `company` | A for-profit business, including subsidiaries and divisions. |
+| `product` | A named product, SKU, or service offering, including individual hardware/software items. |
+| `product_family` | A named product line or family spanning multiple individual products. |
+| `place` | A country, region, city, or named venue. |
+| `university` | A college, university, or other degree-granting educational institution. |
+| `investment_firm` | A private equity firm, venture capital firm, or other investment or fund manager distinct from the companies it owns. |
+| `government_agency` | A government body, department, or public-sector agency. |
+| `nonprofit` | A non-profit or open-source foundation or organization not organized for profit. |
+| `protocol` | A named communication or data protocol. |
+| `technical_standard` | A named technical or industry standard distinct from a protocol. |
+| `document` | A named document or deliverable tracked as an entity in its own right, distinct from a source page. |
+| `department` | An internal division or department within a company. |
+| `event` | A named conference, trade show, or one-time event. |
+
+If none of these reasonably fits, prefer the closest match over inventing a
+new value; propose a schema addition before introducing a new `entity_type`.
 
 #### Entity Creation and Enrichment
 
