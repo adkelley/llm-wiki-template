@@ -276,6 +276,50 @@ updated: YYYY-MM-DD
 ---
 ```
 
+#### Entity Type Guidance
+
+The `entity_type` value MUST be one of `person`, `company`, `product`, or
+`org`.
+
+- `person`: an individual.
+- `company`: a named business, subsidiary, or business unit.
+- `product`: a named product, service, model, or product family.
+- `org`: an organization that is not best represented as a company, including
+  a university, government body, nonprofit, protocol community, or event
+  organization.
+
+Use the closest valid type. Do not invent new entity types in page
+frontmatter. If the schema needs to expand, propose the change before using a
+new value.
+
+#### Entity Creation and Enrichment
+
+Before creating an entity page:
+
+1. Search `wiki/entities/` and `wiki/concepts/` for an existing page with the
+   same or a very similar name.
+2. Reuse the existing page when it represents the same thing; do not create a
+   duplicate merely because a new source uses a different alias.
+3. Check relevant source, synthesis, comparison, trace, and contradiction
+   pages before deciding that an entity is new or that its description is
+   incomplete.
+
+Entity pages are concise identity records: canonical name, naming variants,
+what the entity is, supporting sources, and useful relationships. Put
+cross-source interpretation, changing analysis, comparisons, or detailed
+historical narratives on concept, synthesis, comparison, or trace pages and
+link them from the entity.
+
+Entity-candidate stubs may exist with citations but little body content. Do
+not enrich all stubs in bulk. Enrich a stub when it becomes relevant to active
+work, when it is about to be linked from a page being edited, or when the user
+asks about it. Ground additions in its cited sources and do not invent facts.
+
+If a named thing has accumulated substantial cross-source analysis, keep the
+entity as a concise pointer and place the analysis on the appropriate concept
+or work page. Do not delete the entity solely because a concept or synthesis
+duplicates some of its information.
+
 Concept and entity naming fields follow these rules:
 
 - `canonical_name` is the single preferred display name and MUST be a nonempty
@@ -610,6 +654,14 @@ Stable IDs are permanent once assigned. Do not change an ID because a page
 title, filename, canonical label, or folder location changes.
 
 Before assigning an ID, search existing wiki pages to ensure it is unique.
+
+### Entity and Concept Filename Uniqueness
+
+Entity and concept IDs are namespaced, but their Markdown filenames are used
+for wikilink resolution. Before creating either page, search both folders for
+the same basename or a confusingly similar name. Avoid leaving duplicate
+basenames across `wiki/entities/` and `wiki/concepts/`; rename the less
+canonical page when necessary and update affected links.
 
 ## Choosing the Correct Work Page
 
