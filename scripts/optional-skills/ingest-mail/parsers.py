@@ -13,11 +13,15 @@ def parse_account_names(output: str) -> list[str]:
     except json.JSONDecodeError as exc:
         raise ParseError("Account list was not valid JSON") from exc
 
-    if not isinstance(data, list):
-        raise ParseError("Account list output must be a JSON list")
+    if not isinstance(data, dict):
+        raise ParseError("Account list output must be a JSON object")
+
+    accounts = data.get("accounts")
+    if not isinstance(accounts, list):
+        raise ParseError("Account list output is missing an accounts list")
 
     names: list[str] = []
-    for item in data:
+    for item in accounts:
         if not isinstance(item, dict):
             raise ParseError("Account list items must be JSON objects")
 
@@ -34,19 +38,23 @@ def parse_folder_names(output: str) -> list[str]:
     try:
         data = json.loads(output)
     except json.JSONDecodeError as exc:
-        raise ParseError("Folder list was not valid JSON") from exc
+        raise ParseError("Mailbox list was not valid JSON") from exc
 
-    if not isinstance(data, list):
-        raise ParseError("Folder list output must be a JSON list")
+    if not isinstance(data, dict):
+        raise ParseError("Mailbox list output must be a JSON object")
+
+    mailboxes = data.get("mailboxes")
+    if not isinstance(mailboxes, list):
+        raise ParseError("Mailbox list output is missing a mailboxes list")
 
     names: list[str] = []
-    for item in data:
+    for item in mailboxes:
         if not isinstance(item, dict):
-            raise ParseError("Folder list items must be JSON objects")
+            raise ParseError("Mailbox list items must be JSON objects")
 
         name = item.get("name")
         if not isinstance(name, str) or not name:
-            raise ParseError("Folder list item is missing a string name")
+            raise ParseError("Mailbox list item is missing a string name")
 
         names.append(name)
 
@@ -60,7 +68,7 @@ def parse_address(value: object) -> Address | None:
         raise ParseError("Address must be a JSON object")
 
     name = value.get("name")
-    addr = value.get("addr")
+    addr = value.get("email")
 
     if name is not None and not isinstance(name, str):
         raise ParseError("Name must be a string or null")
@@ -86,17 +94,42 @@ def parse_address_list(value: object) -> list[Address]:
     raise ParseError("Address list must be an object, list, or null")
 
 
+def parse_flags(value: object) -> list[str]:
+    if not isinstance(value, list):
+        raise ParseError("Envelope flags must be a list")
+
+    flags: list[str] = []
+    for flag in value:
+        if isinstance(flag, str):
+            flags.append(flag)
+            continue
+
+        if isinstance(flag, dict):
+            normalized = flag.get("iana") or flag.get("raw")
+            if isinstance(normalized, str) and normalized:
+                flags.append(normalized)
+                continue
+
+        raise ParseError("Envelope flag entries must be strings or objects")
+
+    return flags
+
+
 def parse_envelopes(output: str, account: str, folder: str) -> list[Envelope]:
     try:
         data = json.loads(output)
     except json.JSONDecodeError as exc:
         raise ParseError(f"Envelope list output was not valid JSON: {exc}") from exc
 
-    if not isinstance(data, list):
-        raise ParseError("Envelope list output was not a list")
+    if not isinstance(data, dict):
+        raise ParseError("Envelope list output was not a JSON object")
+
+    envelope_items = data.get("envelopes")
+    if not isinstance(envelope_items, list):
+        raise ParseError("Envelope list output is missing an envelopes list")
 
     envelopes: list[Envelope] = []
-    for item in data:
+    for item in envelope_items:
         if not isinstance(item, dict):
             raise ParseError("Envelope list items must be JSON objects")
 
@@ -104,11 +137,7 @@ def parse_envelopes(output: str, account: str, folder: str) -> list[Envelope]:
         if not isinstance(envelope_id, str) or not envelope_id:
             raise ParseError("Envelope item is missing a string id")
 
-        flags = item.get("flags")
-        if not isinstance(flags, list) or not all(
-            isinstance(flag, str) for flag in flags
-        ):
-            raise ParseError("Envelope flags must be a list of strings")
+        flags = parse_flags(item.get("flags"))
 
         subject = item.get("subject")
         if subject is not None and not isinstance(subject, str):
@@ -118,9 +147,12 @@ def parse_envelopes(output: str, account: str, folder: str) -> list[Envelope]:
         if date is not None and not isinstance(date, str):
             raise ParseError("Envelope date must be a string or null")
 
-        has_attachment = item.get("has_attachment")
-        if not isinstance(has_attachment, bool):
-            raise ParseError("Envelope has_attachment must be a boolean")
+        has_attachment = item.get("has-attachment")
+        if has_attachment is not None and not isinstance(has_attachment, bool):
+            raise ParseError("Envelope has-attachment must be a boolean or null")
+        has_attachment = bool(has_attachment)
+
+        from_addrs = parse_address_list(item.get("from"))
 
         envelopes.append(
             Envelope(
@@ -130,7 +162,7 @@ def parse_envelopes(output: str, account: str, folder: str) -> list[Envelope]:
                 flags=flags,
                 subject=subject,
                 date=date,
-                from_addr=parse_address(item.get("from")),
+                from_addr=from_addrs[0] if from_addrs else None,
                 to_addrs=parse_address_list(item.get("to")),
                 has_attachment=has_attachment,
             )
@@ -140,19 +172,11 @@ def parse_envelopes(output: str, account: str, folder: str) -> list[Envelope]:
 
 
 def parse_message(output: str, account: str, folder: str, message_id: str) -> Message:
-    try:
-        data = json.loads(output)
-    except json.JSONDecodeError as exc:
-        raise ParseError("Message read output was not valid JSON") from exc
-
-    if not isinstance(data, str):
-        raise ParseError("Message read output must be a JSON string")
-
     return Message(
         account=account,
         folder=folder,
         id=message_id,
-        text=data,
+        text=output,
     )
 
 

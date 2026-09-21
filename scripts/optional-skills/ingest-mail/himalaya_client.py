@@ -36,7 +36,7 @@ def himalaya_version() -> str:
 
 
 def himalaya_account_list() -> list[str]:
-    output = run_command(["himalaya", "account", "list", "--output", "json"]).strip()
+    output = run_command(["himalaya", "account", "list", "--json"]).strip()
     return parse_account_names(output)
 
 
@@ -44,12 +44,11 @@ def himalaya_folder_list(account: str) -> list[str]:
     output = run_command(
         [
             "himalaya",
-            "folder",
+            "mailbox",
             "list",
             "--account",
             account,
-            "--output",
-            "json",
+            "--json",
         ]
     ).strip()
     return parse_folder_names(output)
@@ -87,22 +86,21 @@ def himalaya_envelope_list(
 ) -> list[Envelope]:
     effective_page_size = page_size or config.max_messages_per_folder
 
-    output = run_command(
-        [
-            "himalaya",
-            "envelope",
-            "list",
-            "--account",
-            account,
-            "--folder",
-            folder,
-            "--page-size",
-            str(effective_page_size),
-            "--output",
-            "json",
-            *envelope_list_query(window_days),
-        ]
-    ).strip()
+    command = [
+        "himalaya",
+        "envelope",
+        "search" if window_days is not None else "list",
+        "--account",
+        account,
+        "--mailbox",
+        folder,
+        "--page-size",
+        str(effective_page_size),
+        "--json",
+    ]
+    command.extend(envelope_list_query(window_days))
+
+    output = run_command(command).strip()
     return parse_envelopes(output, account, folder)
 
 
@@ -114,11 +112,9 @@ def himalaya_message_read(account: str, folder: str, message_id: str) -> Message
             "read",
             "--account",
             account,
-            "--folder",
+            "--mailbox",
             folder,
-            "--preview",
-            "--output",
-            "json",
+            "--raw",
             message_id,
         ]
     )

@@ -47,7 +47,7 @@ Required user-managed files:
 Required helper files:
 
 - `scan_mail.py` - orchestrates Himalaya preflight, scanning, candidate
-  extraction, preview-only message reads, state filtering, approved raw-source
+  raw message extraction, state filtering, approved raw-source
   export, and finalize.
 - Sibling Python modules such as `config.py`, `state.py`, `parsers.py`,
   `himalaya_client.py`, `raw_export.py`, `thread_context.py`, `models.py`, and
@@ -96,8 +96,8 @@ python3 {skill_dir}/scan_mail.py folder-list --skill-dir {skill_dir}
 The underlying safe Himalaya discovery commands are:
 
 ```bash
-himalaya account list --output json
-himalaya folder list --account {account} --output json
+himalaya account list --json
+himalaya mailbox list --account {account} --json
 ```
 
 ## Himalaya Installation Notes
@@ -161,7 +161,7 @@ malformed, stop and report the problem rather than skipping state.
 Run the Python scanner in preflight mode. It should verify at least:
 
 - `himalaya --version`
-- `himalaya account list --output json`
+- `himalaya account list --json`
 - each configured account exists
 - each configured folder can be listed or read for envelopes
 
@@ -172,8 +172,8 @@ The preflight should use read-only Himalaya commands such as:
 
 ```bash
 himalaya --version
-himalaya account list --output json
-himalaya folder list --account {account} --output json
+himalaya account list --json
+himalaya mailbox list --account {account} --json
 ```
 
 ## Current Command Sequence
@@ -235,8 +235,9 @@ This command outputs one JSON decision object for each new candidate, with
 approved messages are `yes`, clear non-matches are `no`, and unresolved items
 remain `ambiguous` or `context_only`.
 
-Message reads must use Himalaya's `--preview` flag so scanning does not mark
-mail as seen. The scanner uses `last_scan.txt` and `lookback_days` to compute
+Message reads must use Himalaya's `--raw` flag. Himalaya leaves messages unseen
+unless `--seen` is explicitly passed, and `--raw` preserves the original RFC
+5322 source for raw export. The scanner uses `last_scan.txt` and `lookback_days` to compute
 `scan_window_days`, then asks Himalaya for envelopes with:
 
 ```text

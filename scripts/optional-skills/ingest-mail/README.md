@@ -8,13 +8,14 @@ messages for wiki relevance review, and records evaluated envelope IDs so the
 same messages are not reviewed repeatedly.
 
 The skill is read-only with respect to mail. It uses Himalaya commands for
-account listing, folder listing, envelope listing, and preview-only message
-reads. It must not send, delete, move, flag, mark read, or download
+account listing, mailbox listing, envelope listing, and raw message reads. It
+must not send, delete, move, flag, mark read, or download
 attachments.
 
 ## Requirements
 
 - Himalaya installed and available on `PATH`
+- Himalaya v2.1.0 or newer; the skill is not compatible with Himalaya v1
 - Himalaya configured with at least one readable account
 - A `config.toml` file in the installed skill directory
 - Python 3.11+ for `tomllib`
@@ -22,6 +23,14 @@ attachments.
 Install Himalaya from the upstream project:
 
 - <https://github.com/pimalaya/himalaya>
+
+The skill uses Himalaya's v2 command and JSON interfaces, including `mailbox`,
+`--mailbox`, `--json`, `envelope search`, and `message read --raw`. It is
+tested against v2.1.0; verify the installed version with:
+
+```bash
+himalaya --version
+```
 
 Note, as mentioned in the Himalaya installation instructions, Homebrew installs a prebuilt package that 
 cannot customize Cargo features. If your account setup requires optional Himalaya features such as OAuth 2.0 or
@@ -79,8 +88,8 @@ wiki = "your-wiki-name"
 Useful discovery commands:
 
 ```bash
-himalaya account list --output json
-himalaya folder list --account personal --output json
+himalaya account list --json
+himalaya mailbox list --account personal --json
 ```
 
 ## Common Commands
@@ -124,7 +133,7 @@ Thread context in v1 is subject-based envelope context. It strips common
 reply/forward prefixes and is capped by `max_thread_context_messages`; it is
 not full header-based thread reconstruction.
 
-Scan candidates with preview-only message bodies:
+Scan candidates with message bodies:
 
 ```bash
 python3 scan_mail.py scan --skill-dir . --include-messages --limit 10

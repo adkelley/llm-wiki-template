@@ -34,27 +34,27 @@ SPEC.loader.exec_module(scan_mail)
 class ScanMailTests(unittest.TestCase):
     def test_parse_account_names(self):
         output = json.dumps(
-            [
+            {"accounts": [
                 {"name": "personal", "backend": "IMAP, SMTP", "default": True},
                 {"name": "work", "backend": "IMAP", "default": False},
-            ]
+            ]}
         )
 
         self.assertEqual(parsers.parse_account_names(output), ["personal", "work"])
 
     def test_parse_folder_names(self) -> None:
         output = json.dumps(
-            [
+            {"mailboxes": [
                 {"name": "INBOX", "desc": ""},
                 {"name": "Sent Items", "desc": ""},
-            ]
+            ]}
         )
 
         self.assertEqual(parsers.parse_folder_names(output), ["INBOX", "Sent Items"])
 
     def test_parse_message(self) -> None:
         message = parsers.parse_message(
-            json.dumps("From: A <a@example.com>\nSubject: Test\n\nBody"),
+            "From: A <a@example.com>\nSubject: Test\n\nBody",
             account="personal",
             folder="INBOX",
             message_id="143950",
@@ -67,20 +67,23 @@ class ScanMailTests(unittest.TestCase):
 
     def test_parse_envelopes(self) -> None:
         output = json.dumps(
-            [
+            {"queued": 0, "envelopes": [
                 {
                     "id": "123",
-                    "flags": ["Seen"],
+                    "flags": [
+                        {"raw": "\\Seen", "iana": "seen"},
+                        "flagged",
+                    ],
                     "subject": "Project update",
-                    "from": {"name": "Sender Example", "addr": "sender@example.com"},
-                    "to": {
+                    "from": [{"name": "Sender Example", "email": "sender@example.com"}],
+                    "to": [{
                         "name": "Recipient Example",
-                        "addr": "recipient@example.com",
-                    },
+                        "email": "recipient@example.com",
+                    }],
                     "date": "2026-05-07T20:05:12Z",
-                    "has_attachment": False,
+                    "has-attachment": None,
                 }
-            ]
+            ]}
         )
 
         envelopes = parsers.parse_envelopes(
@@ -96,6 +99,7 @@ class ScanMailTests(unittest.TestCase):
         self.assertEqual(envelope.folder, "INBOX")
         self.assertEqual(envelope.id, "123")
         self.assertEqual(envelope.subject, "Project update")
+        self.assertEqual(envelope.flags, ["seen", "flagged"])
 
         self.assertIsNotNone(envelope.from_addr)
         assert envelope.from_addr is not None
@@ -1122,7 +1126,9 @@ class ScanMailTests(unittest.TestCase):
         )
 
         with mock.patch.object(
-            himalaya_client, "run_command", return_value="[]"
+            himalaya_client,
+            "run_command",
+            return_value=json.dumps({"queued": 0, "envelopes": []}),
         ) as run:
             envelopes = scan_mail.himalaya_envelope_list(
                 config,
@@ -1138,21 +1144,87 @@ class ScanMailTests(unittest.TestCase):
             [
                 "himalaya",
                 "envelope",
-                "list",
+                "search",
                 "--account",
                 "personal",
-                "--folder",
+                "--mailbox",
                 "INBOX",
                 "--page-size",
                 "20",
-                "--output",
-                "json",
+                "--json",
                 "after",
                 himalaya_client.scan_window_after_date(3),
                 "order",
                 "by",
                 "date",
                 "desc",
+            ],
+        )
+
+    def test_himalaya_envelope_list_without_window_uses_list(self) -> None:
+        config = scan_mail.MailConfig(
+            lookback_days=14,
+            raw_output_dir="raw/",
+            accounts=["personal"],
+            folders=["INBOX"],
+            max_messages_per_folder=5,
+            max_thread_context_messages=3,
+            wiki="example-wiki",
+        )
+
+        with mock.patch.object(
+            himalaya_client,
+            "run_command",
+            return_value=json.dumps({"queued": 0, "envelopes": []}),
+        ) as run:
+            envelopes = scan_mail.himalaya_envelope_list(
+                config,
+                "personal",
+                "INBOX",
+            )
+
+        self.assertEqual(envelopes, [])
+        self.assertEqual(
+            run.call_args.args[0],
+            [
+                "himalaya",
+                "envelope",
+                "list",
+                "--account",
+                "personal",
+                "--mailbox",
+                "INBOX",
+                "--page-size",
+                "5",
+                "--json",
+            ],
+        )
+
+    def test_himalaya_message_read_uses_raw_mailbox(self) -> None:
+        with mock.patch.object(
+            himalaya_client,
+            "run_command",
+            return_value="From: sender@example.com\n\nBody",
+        ) as run:
+            message = himalaya_client.himalaya_message_read(
+                "personal",
+                "INBOX",
+                "123",
+            )
+
+        self.assertEqual(message.text, "From: sender@example.com\n\nBody")
+        self.assertEqual(
+            run.call_args.args[0],
+            [
+                "himalaya",
+                "message",
+                "read",
+                "--account",
+                "personal",
+                "--mailbox",
+                "INBOX",
+                "--raw",
+                "123",
             ],
         )
 
