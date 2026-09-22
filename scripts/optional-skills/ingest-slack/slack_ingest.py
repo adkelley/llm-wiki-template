@@ -597,7 +597,7 @@ def inspect_archive(database_path: Path) -> ArchiveInspection:
                 "name": row["NAME"],
             }
             for row in connection.execute(
-                "SELECT ID, NAME FROM CHANNEL ORDER BY NAME, ID"
+                "SELECT DISTINCT ID, NAME FROM CHANNEL ORDER BY NAME, ID"
             )
         ]
 

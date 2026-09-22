@@ -305,6 +305,11 @@ class SlackIngestTests(unittest.TestCase):
 
     def test_inspect_archive_returns_counts_and_metadata(self) -> None:
         database_path = self.create_database()
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                "INSERT INTO CHANNEL (ID, NAME) VALUES (?, ?)",
+                ("C1", "alpha"),
+            )
 
         inspection = slack_ingest.inspect_archive(database_path)
 
