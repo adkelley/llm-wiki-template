@@ -525,7 +525,30 @@ def open_database(path: Path) -> sqlite3.Connection:
         raise FileNotFoundError(f"SQLite archive is not a regular file: {path}")
 
     uri = f"{path.resolve().as_uri()}?mode=ro"
-    connection = sqlite3.connect(uri, uri=True)
+    connection: sqlite3.Connection | None = None
+
+    try:
+        connection = sqlite3.connect(uri, uri=True)
+        # sqlite3.connect() may defer opening a WAL database until the first
+        # statement. Probe it here so the immutable fallback handles that
+        # failure rather than failing later in a message query.
+        connection.execute("SELECT 1")
+    except sqlite3.OperationalError as error:
+        if connection is not None:
+            connection.close()
+
+        wal_path = path.with_name(path.name + "-wal")
+        if wal_path.is_file() and wal_path.stat().st_size > 0:
+            raise sqlite3.OperationalError(
+                f"Unable to open Slackdump archive read-only: {path}. "
+                f"The archive has uncheckpointed WAL changes in {wal_path}; "
+                "close Slackdump or checkpoint the archive before ingesting it."
+            ) from error
+
+        immutable_uri = f"{path.resolve().as_uri()}?mode=ro&immutable=1"
+        connection = sqlite3.connect(immutable_uri, uri=True)
+
+    assert connection is not None
     connection.row_factory = sqlite3.Row
     return connection
 

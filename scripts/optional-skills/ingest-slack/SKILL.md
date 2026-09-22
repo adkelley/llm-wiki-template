@@ -67,6 +67,12 @@ Do not rename, edit, delete, or deduplicate archive files from the wiki
 workflow. Slackdump archive contents—including SQLite, WAL/SHM files, uploads,
 and avatars—are immutable source material.
 
+The helper opens archives read-only. For a WAL-mode archive whose `-wal` sidecar
+is absent or empty, it may use SQLite's immutable read-only mode so SQLite does
+not try to create `-shm` files under `raw/`. If a non-empty `-wal` sidecar is
+present and the normal read-only open fails, stop and ask the user to close
+Slackdump or checkpoint the archive; do not ignore pending WAL changes.
+
 ## Step 1 - Discover Slack archives
 
 Run the helper internally from the repository root:

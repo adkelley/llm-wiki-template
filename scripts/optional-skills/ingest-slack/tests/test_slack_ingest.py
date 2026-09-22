@@ -12,6 +12,7 @@ import unittest
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "slack_ingest.py"
 SPEC = importlib.util.spec_from_file_location("slack_ingest", SCRIPT_PATH)
@@ -219,6 +220,64 @@ class SlackIngestTests(unittest.TestCase):
         with slack_ingest.open_database(database_path) as connection:
             with self.assertRaises(sqlite3.OperationalError):
                 connection.execute("CREATE TABLE should_fail (ID INTEGER)")
+
+    def test_open_database_reads_wal_database_without_sidecars(self) -> None:
+        database_path = self.create_database()
+
+        with sqlite3.connect(database_path) as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute(
+                "INSERT INTO MESSAGE "
+                "(ID, CHUNK_ID, CHANNEL_ID, TS, PARENT_ID, THREAD_TS, "
+                "IS_PARENT, TXT, DATA) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (4, 1, "C1", "100.003", None, None, False, "wal", "{}"),
+            )
+            connection.commit()
+            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+        for suffix in ("-wal", "-shm"):
+            database_path.with_name(database_path.name + suffix).unlink(
+                missing_ok=True
+            )
+
+        with slack_ingest.open_database(database_path) as connection:
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM MESSAGE").fetchone()[0],
+                4,
+            )
+            with self.assertRaises(sqlite3.OperationalError):
+                connection.execute("CREATE TABLE should_fail (ID INTEGER)")
+
+        self.assertFalse(
+            database_path.with_name(database_path.name + "-shm").exists()
+        )
+
+    def test_open_database_rejects_pending_wal_after_readonly_failure(self) -> None:
+        database_path = self.create_database()
+
+        with sqlite3.connect(database_path) as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute(
+                "INSERT INTO MESSAGE "
+                "(ID, CHUNK_ID, CHANNEL_ID, TS, PARENT_ID, THREAD_TS, "
+                "IS_PARENT, TXT, DATA) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (4, 1, "C1", "100.003", None, None, False, "wal", "{}"),
+            )
+            connection.commit()
+
+        wal_path = database_path.with_name(database_path.name + "-wal")
+        self.assertTrue(wal_path.exists())
+        self.assertGreater(wal_path.stat().st_size, 0)
+
+        with patch.object(
+            slack_ingest.sqlite3,
+            "connect",
+            side_effect=sqlite3.OperationalError("unable to open database file"),
+        ):
+            with self.assertRaisesRegex(
+                sqlite3.OperationalError, "uncheckpointed WAL changes"
+            ):
+                slack_ingest.open_database(database_path)
 
     def test_open_database_requires_regular_file(self) -> None:
         missing_path = self.slack_dir / "missing.sqlite"
