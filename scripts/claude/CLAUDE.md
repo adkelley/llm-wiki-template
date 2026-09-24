@@ -872,7 +872,7 @@ After EVERY session (or when the user says `/close`), update `wiki/hot.md`:
 After every ingest, lint, or wiki update operation, commit the changes
 as a normal part of the workflow. Do not wait for the user to ask.
 
-- Stage only `wiki/` and `raw/` files. Never stage `.obsidian/`, `.claude/`, or
+- Stage only `wiki/`, `raw/` and `.llm-wiki` files. Never stage `.obsidian/`, `.claude/`, or
   `.DS_Store`.
 - Write a concise commit message summarizing what was ingested or updated.
 - End every commit message with:
