@@ -65,7 +65,7 @@ yes_no_default_yes_prompt() {
 prompt_for_domain() {
   local domain
 
-  printf '%s ' "Wiki domain or project name (leave blank to configure later):"
+  printf '%s ' "Wiki domain or project name (leave blank to configure later):" >&2
   if ! read -r domain; then
     printf '\nUnable to read the wiki domain; leaving it unconfigured.\n' >&2
     return 0
@@ -205,7 +205,7 @@ prompt_for_recall_collection_name() {
   local collection_name
 
   while true; do
-    printf '%s ' "qmd collection name [$default_name]:"
+    printf '%s ' "qmd collection name [$default_name]:" >&2
     if ! IFS= read -r collection_name; then
       printf '\nUnable to read the qmd collection name.\n' >&2
       return 1
