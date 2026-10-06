@@ -120,7 +120,7 @@ test_collection_name_prompt() {
   assert_equal 'custom_name' "$output" \
     "$suite returns the valid replacement override"
   assert_equal \
-    $'Invalid qmd collection name: invalid name!\nUse only letters, digits, hyphens, and underscores.' \
+    $'qmd collection name [ai-research]: Invalid qmd collection name: invalid name!\nUse only letters, digits, hyphens, and underscores.\nqmd collection name [ai-research]: ' \
     "$(cat "$error_file")" \
     "$suite explains the collection name constraint"
 
