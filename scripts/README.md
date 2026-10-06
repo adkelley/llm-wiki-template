@@ -28,6 +28,36 @@ The first shared utility is an ingest guard:
 scripts/wiki/ingest_guard.py
 ```
 
+The directory also includes a utility for linking external source folders into
+the wiki's `raw/` directory:
+
+```text
+scripts/wiki/link_raw_sources.sh
+```
+
+`link_raw_sources.sh` creates relative symbolic links for every immediate
+folder alongside the wiki directory, excluding the wiki directory itself.
+This is useful when the wiki is stored inside a larger project folder and
+source material should remain in its original folders rather than being
+copied into `raw/`. Existing links are left unchanged when they point to the
+expected target; conflicting files or links cause the script to stop.
+
+Run it from the wiki directory:
+
+```bash
+bash scripts/wiki/link_raw_sources.sh
+```
+
+Or provide the wiki directory explicitly when running the script from
+elsewhere:
+
+```bash
+bash scripts/wiki/link_raw_sources.sh "/path/to/LLM Wiki"
+```
+
+For example, if the wiki is at `PicoVoice/LLM Wiki`, the script links sibling
+folders such as `PicoVoice/Research` into `PicoVoice/LLM Wiki/raw/Research`.
+
 The ingest guard helps prevent users from accidentally ingesting duplicate
 material, and lets them mark specific files or whole folders as
 do-not-ingest. It records every ingest decision in a local JSON Lines
