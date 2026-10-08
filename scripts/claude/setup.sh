@@ -632,10 +632,36 @@ write_recall_config() {
     "$collection_name"
 }
 
+initialize_send_slack_config() {
+  local config_file="$repo_root/.llm-wiki/slack/send-slack.env"
+
+  if [ -e "$config_file" ]; then
+    printf 'Preserved existing send-slack configuration: %s\n' "$config_file"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$config_file")"
+  umask 077
+  cat > "$config_file" <<'EOF'
+# User-managed send-slack configuration. Replace every placeholder.
+SLACK_CHANNEL_ID=
+SLACK_CHANNEL_NAME=
+SLACK_BOT_NAME=
+SLACK_WEBHOOK_URL=
+EOF
+  chmod 600 "$config_file"
+  printf 'Created send-slack configuration template: %s\n' "$config_file"
+}
+
 initialize_optional_skill() {
   local skill_name="$1"
   local destination_path="$2"
   local domain_file="$3"
+
+  if [ "$skill_name" = "send-slack" ]; then
+    initialize_send_slack_config
+    return 0
+  fi
 
   if [ "$skill_name" != "recall" ]; then
     return 0
