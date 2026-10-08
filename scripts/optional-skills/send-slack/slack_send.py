@@ -1,375 +1,225 @@
+#!/usr/bin/env python3
+"""Find Slack bot mentions and send confirmed webhook responses."""
+
+from __future__ import annotations
+
 import argparse
+import importlib.util
 import json
-import pathlib
 import re
-import urllib.error
-import urllib.parse
-import urllib.request
-from dataclasses import dataclass
+import stat
+import subprocess
+import sys
+import hashlib
+from datetime import datetime, timezone
+from pathlib import Path
 
 
-class CredentialError(Exception):
-    """Raised when a credential is not found in the credentials file."""
-
-
-class ChannelResolutionError(Exception):
-    """Raised when a channel cannot be resolved."""
-
-
-class SlackApiError(Exception):
-    """Raised when the Slack API returns an error."""
-
-
-@dataclass(frozen=True)
-class Credentials:
-    token: str
-    cookie: str
-
-
-DEFAULT_CREDENTIALS_PATH = (
-    pathlib.Path.home() / ".cache" / "slackdump" / "slackdump_garibaldi.env"
+ROOT = Path(__file__).resolve().parents[3]
+INGEST_PATHS = (
+    ROOT / "skills/ingest-slack/slack_ingest.py",
+    ROOT / "scripts/optional-skills/ingest-slack/slack_ingest.py",
 )
-CONVERSATIONS_LIST_URL = "https://slack.com/api/conversations.list"
-CHAT_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
-
-TIMESTAMP_REGEX = re.compile(r"\d+\.\d{6}")
-CHANNEL_ID_REGEX = re.compile(r"[CDG][A-Z0-9]+")
+CONFIG_PATH = ROOT / ".llm-wiki/slack/send-slack.env"
+MANIFEST_PATH = ROOT / ".llm-wiki/slack/send-slack-manifest.jsonl"
+MENTION_RE = re.compile(r"<@([A-Z0-9]+)>")
 
 
-def cookie_header(credentials: Credentials) -> str:
-    if credentials.cookie.startswith("d="):
-        return credentials.cookie
-    return f"d={credentials.cookie}"
+def load_ingest_module():
+    ingest_path = next((path for path in INGEST_PATHS if path.is_file()), None)
+    if ingest_path is None:
+        raise RuntimeError("Unable to locate the installed Slackdump helper")
+    spec = importlib.util.spec_from_file_location("slack_ingest", ingest_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Unable to load the Slackdump helper")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-def load_credentials(path: pathlib.Path) -> Credentials:
+class SendSlackError(RuntimeError):
+    pass
+
+
+def load_config(path: Path = CONFIG_PATH) -> dict[str, str]:
     if not path.is_file():
-        raise CredentialError(f"Credentials file not found: {path}")
+        raise SendSlackError(f"Configuration file not found: {path}")
+    if stat.S_IMODE(path.stat().st_mode) & 0o077:
+        raise SendSlackError("Configuration file must have mode 600")
 
-    if path.stat().st_mode & 0o077 != 0:
-        raise CredentialError(f"Credentials file is not readable: {path}")
-
-    values = {}
-    for line in path.read_text().splitlines():
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
         key, separator, value = line.partition("=")
         if separator:
-            values[key.strip()] = value.strip()
+            values[key.strip()] = value.strip().strip('"').strip("'")
 
-    token = values.get("SLACK_TOKEN")
-    if not token:
-        raise CredentialError("token not found")
-    if not token.startswith("xoxc"):
-        raise CredentialError("token does not start with xoxc")
-
-    cookie = values.get("SLACK_COOKIE")
-    if not cookie:
-        raise CredentialError("cookie not found")
-    if not cookie.startswith("xoxd"):
-        raise CredentialError("cookie does not start with xoxd")
-
-    return Credentials(token, cookie)
-
-
-# ---------------------------------------------------------------------------
-# Slack API requests
-# ---------------------------------------------------------------------------
-
-
-def http_post(url: str, data: dict, headers: dict) -> dict:
-    encoded_data = urllib.parse.urlencode(data).encode("utf-8")
-    request = urllib.request.Request(
-        url,
-        data=encoded_data,
-        headers={
-            **headers,
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-        method="POST",
+    required = (
+        "SLACK_CHANNEL_ID",
+        "SLACK_CHANNEL_NAME",
+        "SLACK_BOT_NAME",
+        "SLACK_WEBHOOK_URL",
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
-def send_message(
-    credentials: Credentials,
-    channel_id: str,
-    message: str,
-    http_post,
-    thread_ts: str | None = None,
-) -> dict:
-    data = {
-        "token": credentials.token,
-        "channel": channel_id,
-        "text": message,
-    }
-
-    if thread_ts is not None:
-        data["thread_ts"] = thread_ts
-
-    response = http_post(
-        CHAT_POST_MESSAGE_URL,
-        data=data,
-        headers={"Cookie": cookie_header(credentials)},
-    )
-
-    if not response["ok"]:
-        error_code = response.get("error", "unknown_error")
-        raise SlackApiError(f"Slack message send failed: {error_code}")
-
-    return {
-        "channel": response["channel"],
-        "ts": response["ts"],
-    }
-
-
-def fetch_channels(credentials: Credentials, http_post) -> list[dict]:
-    channels = []
-    cursor = ""
-
-    while True:
-        data = {
-            "token": credentials.token,
-            "types": "public_channel,private_channel",
-        }
-
-        if cursor:
-            data["cursor"] = cursor
-
-        response = http_post(
-            CONVERSATIONS_LIST_URL,
-            data=data,
-            headers={"Cookie": cookie_header(credentials)},
+    if any(not values.get(key) for key in required):
+        raise SendSlackError(
+            "Configuration must define channel ID, channel name, bot name, and webhook URL"
         )
-
-        if not response["ok"]:
-            error_code = response.get("error", "unknown_error")
-            raise SlackApiError(f"Slack channel lookup failed: {error_code}")
-
-        channels.extend(response["channels"])
-        cursor = response.get("response_metadata", {}).get("next_cursor", "")
-
-        if not cursor:
-            break
-
-    return channels
+    if not values["SLACK_WEBHOOK_URL"].startswith("https://hooks.slack.com/"):
+        raise SendSlackError("SLACK_WEBHOOK_URL must be a Slack HTTPS webhook URL")
+    return values
 
 
-# ---------------------------------------------------------------------------
-# Channel resolution
-# ---------------------------------------------------------------------------
+def discover_database(ingest, raw_dir: Path, explicit: Path | None) -> Path:
+    paths = [explicit] if explicit else ingest.find_slackdump_databases(raw_dir)
+    if len(paths) != 1:
+        raise SendSlackError("Expected exactly one Slackdump SQLite database")
+    return paths[0]
 
 
-def resolve_channel(channel_ref: str, channels: list[dict]) -> dict:
-    channel_ref = channel_ref.removeprefix("#")
+def validate_channel(ingest, database: Path, config: dict[str, str]):
+    with ingest.open_database(database) as connection:
+        ingest.validate_slackdump_database(connection)
+        ingest.validate_schema(connection)
+        channel = ingest.resolve_archive_channel(connection)
+        user_names = ingest.load_user_names(connection)
+        bot_ids = []
+        bot_name = config["SLACK_BOT_NAME"].removeprefix("@").casefold()
+        for row in connection.execute("SELECT ID, USERNAME, DATA FROM S_USER"):
+            data = ingest.parse_json_object(row["DATA"])
+            profile = data.get("profile", {})
+            names = {
+                row["USERNAME"],
+                data.get("name"),
+                data.get("real_name"),
+                profile.get("display_name"),
+                profile.get("real_name"),
+            }
+            if any(name and name.casefold() == bot_name for name in names):
+                bot_ids.append(row["ID"])
+    if channel.channel_id != config["SLACK_CHANNEL_ID"] or channel.name != config["SLACK_CHANNEL_NAME"]:
+        raise SendSlackError(
+            f"Archive channel {channel.name} ({channel.channel_id}) does not match configured channel"
+        )
+    if len(bot_ids) != 1:
+        raise SendSlackError(
+            f"Configured Slack bot name matched {len(bot_ids)} users; expected exactly one"
+        )
+    return channel, user_names, {bot_ids[0]}
 
-    id_matches = [channel for channel in channels if channel["id"] == channel_ref]
 
-    if id_matches:
-        return id_matches[0]
-
-    name_matches = [channel for channel in channels if channel["name"] == channel_ref]
-    if len(name_matches) == 1:
-        return name_matches[0]
-
-    if len(name_matches) > 1:
-        raise ChannelResolutionError("channel name is ambiguous")
-
-    raise ChannelResolutionError(f"channel {channel_ref} not found")
+def read_manifest(path: Path = MANIFEST_PATH) -> set[tuple[str, str, str]]:
+    if not path.exists():
+        return set()
+    keys = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            record = json.loads(line)
+            keys.add((record["archive_path"], record["channel_id"], record["message_ts"]))
+    return keys
 
 
-# ---------------------------------------------------------------------------
-# CLI definition and entry point
-# ---------------------------------------------------------------------------
+def find_candidates(ingest, database: Path, raw_dir: Path, config: dict[str, str]):
+    channel, user_names, bot_ids = validate_channel(ingest, database, config)
+    messages = ingest.fetch_canonical_messages(database, channel.channel_id)
+    handled = read_manifest()
+    groups = ingest.group_messages(messages)
+    candidates = []
+    for group in groups:
+        matches = []
+        for message in group.messages:
+            if message.data.get("subtype") in {"channel_join", "channel_leave"}:
+                continue
+            if bot_ids.intersection(MENTION_RE.findall(message.text)):
+                matches.append(message)
+        if not matches:
+            continue
+        trigger = matches[-1]
+        key = ingest.message_key(trigger, raw_dir)
+        if key in handled:
+            continue
+        candidates.append({
+            "archive_path": key[0],
+            "channel_id": channel.channel_id,
+            "channel_name": channel.name,
+            "message_ts": trigger.message_ts,
+            "thread_ts": group.thread_ts,
+            "author": user_names.get(trigger.data.get("user"), trigger.data.get("user", "<unknown>")),
+            "messages": [
+                {"ts": m.message_ts, "author": user_names.get(m.data.get("user"), m.data.get("user", "<unknown>")), "text": m.text}
+                for m in group.messages
+            ],
+        })
+    return candidates
+
+
+def append_manifest(record: dict, path: Path = MANIFEST_PATH) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def send_webhook(url: str, text: str) -> None:
+    payload = json.dumps({"text": text}, ensure_ascii=False)
+    try:
+        subprocess.run(
+            ["curl", "--fail-with-body", "--silent", "--show-error", "-X", "POST",
+             "-H", "Content-type: application/json", "--data", payload, url],
+            check=True, capture_output=True, text=True, timeout=30,
+        )
+    except subprocess.CalledProcessError as error:
+        if error.returncode == 6:
+            detail = "DNS lookup failed"
+        elif error.returncode == 28:
+            detail = "request timed out"
+        else:
+            detail = "webhook rejected the request"
+        raise SendSlackError(f"Slack webhook delivery failed: {detail}") from error
+    except subprocess.TimeoutExpired as error:
+        raise SendSlackError("Slack webhook delivery failed: request timed out") from error
+    except OSError as error:
+        raise SendSlackError("Slack webhook delivery failed: curl is unavailable") from error
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    mode = parser.add_mutually_exclusive_group()
-
-    parser.add_argument(
-        "--channel",
-        required=True,
-        help="The channel to send the message to",
-    )
-
-    parser.add_argument(
-        "--message",
-        required=True,
-        help="The message to send",
-    )
-
-    parser.add_argument(
-        "--thread-ts",
-        required=False,
-        help="The timestamp of the thread to reply to",
-    )
-
-    mode.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview without sending",
-    )
-
-    mode.add_argument(
-        "--confirm",
-        action="store_true",
-        help="Allow the message to be sent",
-    )
-
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    for command in ("candidates", "send"):
+        sub = subparsers.add_parser(command)
+        sub.add_argument("--database", type=Path)
+        sub.add_argument("--raw-dir", type=Path, default=ROOT / "raw")
+    send = subparsers.choices["send"]
+    send.add_argument("--message-ts", required=True)
+    send.add_argument("--message", required=True)
+    send.add_argument("--confirm", action="store_true")
     return parser
 
 
 def main(argv=None) -> int:
-    parser = build_parser()
+    args = build_parser().parse_args(argv)
     try:
-        args = parser.parse_args(argv)
-    except SystemExit as error:
-        if error.code == 0:
-            raise
-        print(
-            json.dumps(
-                {
-                    "ok": False,
-                    "error": {
-                        "code": "invalid_arguments",
-                        "message": "Invalid command-line arguments",
-                    },
-                }
-            )
-        )
-        return 2
-
-    if args.thread_ts and not TIMESTAMP_REGEX.fullmatch(args.thread_ts):
-        print(
-            json.dumps(
-                {
-                    "ok": False,
-                    "error": {
-                        "code": "invalid_arguments",
-                        "message": "Invalid thread timestamp",
-                    },
-                }
-            )
-        )
-        return 2
-
-    if not args.message.strip():
-        print(
-            json.dumps(
-                {
-                    "ok": False,
-                    "error": {
-                        "code": "invalid_arguments",
-                        "message": "Message cannot be empty",
-                    },
-                }
-            )
-        )
-        return 2
-
-    if not args.channel.strip():
-        print(
-            json.dumps(
-                {
-                    "ok": False,
-                    "error": {
-                        "code": "invalid_arguments",
-                        "message": "Channel cannot be empty",
-                    },
-                }
-            )
-        )
-        return 2
-
-    dry_run = not args.confirm
-
-    try:
-        credentials = load_credentials(DEFAULT_CREDENTIALS_PATH)
-
-        if CHANNEL_ID_REGEX.fullmatch(args.channel):
-            channel = {
-                "id": args.channel,
-                "name": args.channel,
-            }
-        else:
-            channels = fetch_channels(
-                credentials,
-                http_post,
-            )
-            channel = resolve_channel(args.channel, channels)
-
-        if dry_run:
-            print(
-                json.dumps(
-                    {
-                        "ok": True,
-                        "operation": "send_message",
-                        "dry_run": True,
-                        "channel_id": channel["id"],
-                        "channel_name": channel["name"],
-                        "message": args.message,
-                        "thread_ts": args.thread_ts,
-                    }
-                )
-            )
+        if args.command == "send" and not args.confirm:
+            raise SendSlackError("Sending requires --confirm after conversational confirmation")
+        ingest = load_ingest_module()
+        config = load_config()
+        database = discover_database(ingest, args.raw_dir, args.database)
+        candidates = find_candidates(ingest, database, args.raw_dir, config)
+        if args.command == "candidates":
+            print(json.dumps(candidates, ensure_ascii=False, indent=2))
             return 0
-
-        result = send_message(
-            credentials,
-            channel["id"],
-            args.message,
-            http_post,
-            args.thread_ts,
-        )
-
-        print(
-            json.dumps(
-                {
-                    "ok": True,
-                    "operation": "send_message",
-                    "dry_run": False,
-                    "channel_id": channel["id"],
-                    "channel_name": channel["name"],
-                    "message_ts": result["ts"],
-                    "thread_ts": args.thread_ts,
-                }
-            )
-        )
+        selected = next((item for item in candidates if item["message_ts"] == args.message_ts), None)
+        if selected is None:
+            raise SendSlackError("Message is not an unanswered bot candidate")
+        send_webhook(config["SLACK_WEBHOOK_URL"], args.message)
+        append_manifest({**{key: selected[key] for key in ("archive_path", "channel_id", "message_ts", "thread_ts")}, "sent_at": datetime.now(timezone.utc).isoformat(), "answer_sha256": hashlib.sha256(args.message.encode()).hexdigest()})
+        print(json.dumps({"ok": True, "message_ts": args.message_ts}))
         return 0
-
-    except CredentialError:
-        error_code = "credentials_error"
-        error_message = (
-            "Unable to load Slack credentials. Check the Slackdump credentials file."
-        )
-    except ChannelResolutionError:
-        error_code = "channel_error"
-        error_message = "Slack channel was not found or matched multiple channels."
-    except SlackApiError:
-        error_code = "slack_api_error"
-        error_message = (
-            "Slack rejected the request. "
-            "Your session may be expired or lack permission."
-        )
-    except urllib.error.URLError:
-        error_code = "network_error"
-        error_message = (
-            "Unable to reach Slack. Check your network connection and try again."
-        )
-
-    print(
-        json.dumps(
-            {
-                "ok": False,
-                "error": {
-                    "code": error_code,
-                    "message": error_message,
-                },
-            }
-        )
-    )
-    return 1
+    except SendSlackError as error:
+        print(json.dumps({"ok": False, "error": str(error)}))
+        return 1
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

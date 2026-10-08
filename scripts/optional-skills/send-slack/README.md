@@ -1,107 +1,109 @@
 # send-slack
 
-Send a Slack message from an LLM Wiki using the existing Slackdump browser
-session credentials. This optional skill is intentionally small: it resolves a
-channel, sends one message, and can optionally reply in an existing thread.
+Answer Slack messages addressed to Dobby `@dobby` by searching this LLM Wiki's
+Slackdump archive and posting approved answers through the configured Slack
+channel webhook.
 
-It does not create Slack apps or use the Python Slack SDK. Slackdump's
-`xoxc`/`xoxd` browser credentials are not the OAuth credentials expected by
-that SDK, so the companion Python adapter uses a narrow HTTP client instead.
+This skill is scoped to one Slack channel per wiki. It does not use Slack
+browser-session credentials, Slack OAuth tokens, or the Slack Web API.
 
 ## Requirements
 
-- Python 3.10 or newer
-- Slackdump 4.4.4 or a compatible installation
-- A readable credentials file at:
+- Python 3.10 or newer;
+- the `ingest-slack`, `slackdump`, `slackdump-source`, and `slackdump-sqlite3`
+  skills;
+- a read-only Slackdump SQLite archive under `raw/Slack/`; and
+- a mode-`600` configuration file at `.llm-wiki/slack/send-slack.env`.
 
-  ```text
-  ~/.cache/slackdump/slackdump_garibaldi.env
-  ```
+Example configuration:
 
-  The file must define `SLACK_TOKEN` and `SLACK_COOKIE`, and should be mode
-  `600`.
+```dotenv
+SLACK_CHANNEL_ID=C0123456789
+SLACK_CHANNEL_NAME=project-epiphan
+SLACK_BOT_NAME=dobby
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+```
 
-The adapter reads the credentials file itself. Never put either credential in a
-command argument, shell history, log, exception, or output file.
+The user is responsible for creating and filling in this file. Skill
+installation may create an empty starter template when the file does not yet
+exist, but it never supplies a webhook URL or overwrites an existing file.
+
+The webhook URL is a secret. Keep the configuration file out of Git and do
+not paste the URL into chat, logs, source pages, or shell history.
 
 ## Usage
 
-From the repository root, preview a send with no Slack write:
+Ask the LLM Wiki to check or answer Slack messages addressed to Dobby. The
+workflow will:
+
+1. locate and validate the Slackdump SQLite archive;
+2. confirm that it represents the configured channel;
+3. resolve `SLACK_BOT_NAME` to exactly one Slack user and find canonical
+   messages containing a real mention targeting that user, such as Slack's
+   stored `<@USER_ID>` form;
+4. include the full parent thread and replies as context;
+5. omit messages already recorded as successfully answered;
+6. show candidates and exact proposed answers for review; and
+7. send only user-selected, explicitly confirmed answers through the webhook.
+
+After Slackdump has refreshed the archive, preview candidates explicitly with:
 
 ```bash
-python3 scripts/optional-skills/send-slack/slack_send.py \
-  --channel "#general" \
-  --message "Hello from the LLM Wiki" \
-  --dry-run
+python3 scripts/optional-skills/send-slack/slack_send.py candidates \
+  --database .llm-wiki/slack/slackdump_YYYYMMDD_HHMMSS/slackdump.sqlite
 ```
 
-After the user has explicitly confirmed the exact channel and message, perform
-the send with `--confirm`:
+Refresh the archive separately with Slackdump, for example:
 
 ```bash
-python3 scripts/optional-skills/send-slack/slack_send.py \
-  --channel "#general" \
-  --message "Hello from the LLM Wiki" \
-  --confirm
+slackdump resume .llm-wiki/slack/slackdump_YYYYMMDD_HHMMSS
 ```
 
-Reply to an existing thread by adding its Slack timestamp:
+The responder does not run Slackdump or fetch new Slack messages itself.
+
+The webhook request is equivalent to:
 
 ```bash
-python3 scripts/optional-skills/send-slack/slack_send.py \
-  --channel "C0123456789" \
-  --message "Following up here" \
-  --thread-ts "1712345678.123456" \
-  --confirm
+curl -X POST \
+  -H 'Content-type: application/json' \
+  --data '{"text":"Hello"}' \
+  "$SLACK_WEBHOOK_URL"
 ```
 
-The command emits one sanitized structured JSON object on stdout. A dry-run
-preview includes the resolved channel ID/name, exact message, optional thread
-timestamp, and `dry_run: true`:
+The implementation must use a JSON encoder for the actual payload. Do not
+construct JSON by unsafe shell interpolation.
 
-```json
-{
-  "ok": true,
-  "operation": "send_message",
-  "dry_run": true,
-  "channel_id": "C0123456789",
-  "channel_name": "general",
-  "message": "Hello from the LLM Wiki",
-  "thread_ts": null
-}
-```
+## Response tracking
 
-A successful confirmed send additionally includes `message_ts` and sets
-`dry_run` to `false`. Output must never include `SLACK_TOKEN`,
-`SLACK_COOKIE`, raw authorization headers, cookies, or full exception
-tracebacks.
+Successful responses are tracked at
+`.llm-wiki/slack/send-slack-manifest.jsonl`.
 
-The command rejects empty or whitespace-only channel and message values. A
-thread timestamp must use Slack's format, such as `1712345678.123456`.
+Only a confirmed successful webhook delivery is recorded. A failed or
+ambiguous send remains eligible for later investigation or retry. Do not
+automatically retry an ambiguous timeout because the message may already have
+been accepted by Slack.
 
-Invalid command-line input returns exit code `2`. Credential, channel, Slack
-API, and network failures return exit code `1`. Failures use sanitized error
-codes including `invalid_arguments`, `credentials_error`, `channel_error`,
-`slack_api_error`, and `network_error`.
+The manifest is mutable LLM Wiki bookkeeping. Slackdump archives under
+`raw/Slack/` remain immutable and must not be edited, deleted, or deduplicated
+by this workflow.
 
 ## Safety boundaries
 
-- Dry-run is the default behavior unless `--confirm` is supplied.
-- A real send requires both an explicit user confirmation in the conversation
-  and the command's `--confirm` flag.
-- Resolve the channel before attempting to send. Do not guess when a name maps
-  to multiple channels.
-- Do not modify Slackdump archives or files under `~/.cache/slackdump`.
-- This MVP does not upload files, add reactions, delete or edit messages,
-  schedule messages, administer workspaces, or search broad message history.
+- The workflow is explicit and on demand; it is not part of `/scan-raw`.
+- It reads only the one channel configured for this wiki.
+- It matches real Slack user mentions targeting the configured bot, not
+  incidental text containing the bot name.
+- Every external post requires confirmation of the exact answer text.
+- It does not support uploads, reactions, edits, deletes, administration,
+  scheduling, or broad multi-channel messaging.
 
-## Testing
+## Troubleshooting
 
-Run the unit tests from the repository root:
+Stop with a clear error if the configuration is missing, malformed, or more
+permissive than mode `600`; the Slackdump archive cannot be found or opened
+read-only; the archive channel does not match the configured channel; the
+webhook rejects the request or cannot be reached; or the response manifest
+cannot be read or written.
 
-```bash
-python3 -m unittest discover -s scripts/optional-skills/send-slack/tests
-```
-
-Tests must mock HTTP requests and must not contact Slack or read the real
-credentials file.
+No matching messages means there is currently nothing new to answer; it is not
+an error.
