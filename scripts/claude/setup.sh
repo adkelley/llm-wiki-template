@@ -632,11 +632,57 @@ write_recall_config() {
     "$collection_name"
 }
 
+ensure_claude_send_slack_permission() {
+  local settings_file="$repo_root/.claude/settings.local.json"
+
+  if ! python3 - "$settings_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+permission = "Bash(python3 scripts/optional-skills/send-slack/slack_send.py send *)"
+
+try:
+    data = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError) as error:
+    print(f"Unable to update Claude permissions in {path}: {error}", file=sys.stderr)
+    raise SystemExit(1)
+
+if not isinstance(data, dict):
+    print(f"Unable to update Claude permissions in {path}: root must be an object", file=sys.stderr)
+    raise SystemExit(1)
+
+permissions = data.setdefault("permissions", {})
+if not isinstance(permissions, dict):
+    print(f"Unable to update Claude permissions in {path}: permissions must be an object", file=sys.stderr)
+    raise SystemExit(1)
+
+allow = permissions.setdefault("allow", [])
+if not isinstance(allow, list):
+    print(f"Unable to update Claude permissions in {path}: permissions.allow must be an array", file=sys.stderr)
+    raise SystemExit(1)
+
+if permission not in allow:
+    allow.append(permission)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    print(f"Added send-slack permission to {path}")
+else:
+    print(f"Preserved existing send-slack permission in {path}")
+PY
+  then
+    printf 'Warning: send-slack was installed, but Claude permission setup did not complete.\n' >&2
+    printf 'Add this permission manually to %s:\n' "$settings_file" >&2
+    printf '  Bash(python3 scripts/optional-skills/send-slack/slack_send.py send *)\n' >&2
+  fi
+}
+
 initialize_send_slack_config() {
   local config_file="$repo_root/.llm-wiki/slack/send-slack.env"
 
   if [ -e "$config_file" ]; then
     printf 'Preserved existing send-slack configuration: %s\n' "$config_file"
+    ensure_claude_send_slack_permission
     return 0
   fi
 
@@ -651,6 +697,7 @@ SLACK_WEBHOOK_URL=
 EOF
   chmod 600 "$config_file"
   printf 'Created send-slack configuration template: %s\n' "$config_file"
+  ensure_claude_send_slack_permission
 }
 
 initialize_optional_skill() {

@@ -29,6 +29,11 @@ The script can:
 
 The generated `.claude/settings.local.json` tells Claude Code to store repository-specific auto-memory in `.claude/memory` inside the project, rather than in Claude Code’s default global memory location.
 
+When `send-slack` is installed, the setup script also adds permission for its
+webhook-send command to `.claude/settings.local.json`, preserving existing
+settings and avoiding duplicate entries. If the file cannot be updated, setup
+prints the permission that must be added manually.
+
 The installer copies optional skills into your active Claude environment. It does not remove them from the source directory.
 Template hashes are tracked in `.llm-wiki/template-manifest.jsonl` so local
 edits to `CLAUDE.md` are preserved.

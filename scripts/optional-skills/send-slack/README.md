@@ -1,8 +1,8 @@
 # send-slack
 
-Answer Slack messages addressed to Dobby `@dobby` by searching this LLM Wiki's
-Slackdump archive and posting approved answers through the configured Slack
-channel webhook.
+Answer Slack messages addressed to the configured bot by searching this LLM
+Wiki's Slackdump archive and posting approved answers through the configured
+Slack channel webhook.
 
 This skill is scoped to one Slack channel per wiki. It does not use Slack
 browser-session credentials, Slack OAuth tokens, or the Slack Web API.
@@ -20,7 +20,7 @@ Example configuration:
 ```dotenv
 SLACK_CHANNEL_ID=C0123456789
 SLACK_CHANNEL_NAME=project-epiphan
-SLACK_BOT_NAME=dobby
+SLACK_BOT_NAME=my-bot
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
 
@@ -28,12 +28,17 @@ The user is responsible for creating and filling in this file. Skill
 installation may create an empty starter template when the file does not yet
 exist, but it never supplies a webhook URL or overwrites an existing file.
 
+`SLACK_BOT_NAME` may optionally include a leading `@`. The skill resolves the
+name case-insensitively against Slack usernames, display names, and real names
+in the Slackdump archive and requires exactly one matching user.
+
 The webhook URL is a secret. Keep the configuration file out of Git and do
 not paste the URL into chat, logs, source pages, or shell history.
 
 ## Usage
 
-Ask the LLM Wiki to check or answer Slack messages addressed to Dobby. The
+Ask the LLM Wiki to check or answer Slack messages addressed to the configured
+bot. The
 workflow will:
 
 1. locate and validate the Slackdump SQLite archive;

@@ -1,12 +1,13 @@
 ---
 name: send-slack
 description: |
-  Find unanswered Slack messages addressed to @dobby in the LLM Wiki's
-  configured Slackdump channel, draft answers using the full thread context,
-  and send user-approved answers through that channel's incoming webhook.
-  Trigger when the user asks to check or answer Slack messages addressed to
-  Dobby. Do not use this skill for Slack archive ingestion, administration,
-  uploads, reactions, deletion, editing, or broad multi-channel messaging.
+  Find unanswered Slack messages addressed to the configured bot in the LLM
+  Wiki's configured Slackdump channel, draft answers using the full thread
+  context, and send user-approved answers through that channel's incoming
+  webhook. Trigger when the user asks to check or answer Slack messages
+  addressed to the configured bot. Do not use this skill for Slack archive
+  ingestion, administration, uploads, reactions, deletion, editing, or broad
+  multi-channel messaging.
 ---
 
 # /send-slack - Answer Slack Messages

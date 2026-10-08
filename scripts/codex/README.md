@@ -18,6 +18,10 @@ The script can:
 3. optionally install shared optional skills into `./skills/`
 
 The installer copies optional skills into your active Codex environment. It does not remove them from the source directory.
+
+The `send-slack` skill may prompt Codex for approval before running its
+webhook-send command. Approve the command only after reviewing the target
+database, channel, and message text.
 Template hashes are tracked in `.llm-wiki/template-manifest.jsonl` so local
 edits to `AGENT.md` are preserved.
 
