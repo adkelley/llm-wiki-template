@@ -730,6 +730,7 @@ is_slack_bundle_dir() {
       [ -f "$dir/$skill_name/SKILL.md" ] || return 1
     fi
   done
+  [ -f "$dir/refresh-slack/SKILL.md" ] || return 1
 
   return 0
 }
@@ -1025,7 +1026,7 @@ install_optional_skills() {
         item_destination_paths+=("$target_skills_dir/$skill_name")
       done
       skill_display_name="Slack archive skills"
-      skill_description="Installs ingest-slack and its three Slackdump supporting skills together."
+      skill_description="Installs ingest-slack, refresh-slack, and three Slackdump supporting skills together."
       metadata_skill_path="$skill_path"
       found_any=true
     else

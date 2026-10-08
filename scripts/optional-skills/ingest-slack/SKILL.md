@@ -35,6 +35,7 @@ The Slackdump support bundle must be installed:
 - `slackdump`
 - `slackdump-source`
 - `slackdump-sqlite3`
+- `refresh-slack` (included inside the `ingest-slack` skill directory)
 
 Use the repository's installed skill copies and the helper at:
 
@@ -57,15 +58,22 @@ raw/Slack/project-alpha/slackdump_20260912_110311/
 └── slackdump.sqlite
 ```
 
-The user may update an existing archive with Slackdump's normal resume workflow:
+Before inspecting an archive, run the bundled refresh workflow. It updates the
+archive and removes duplicate records:
 
 ```bash
-slackdump resume raw/Slack/project-alpha/slackdump_20260912_110311
+scripts/optional-skills/ingest-slack/refresh-slack/refresh_slack.sh \
+  raw/Slack/project-alpha/slackdump_20260912_110311
 ```
 
-Do not rename, edit, delete, or deduplicate archive files from the wiki
-workflow. Slackdump archive contents—including SQLite, WAL/SHM files, uploads,
-and avatars—are immutable source material.
+If no archive is supplied, the script discovers archives below `raw/Slack/`.
+Do not continue if refresh fails. Refresh logs and the latest machine-readable
+status are kept under `.llm-wiki/slack/{archive-directory-name}/refresh/`.
+
+Do not rename or manually edit archive files from the wiki workflow. The
+refresh workflow is the only operation here that updates Slackdump archive
+contents; SQLite, WAL/SHM files, uploads, and avatars remain Slackdump-managed
+source material.
 
 The helper opens archives read-only. For a WAL-mode archive whose `-wal` sidecar
 is absent or empty, it may use SQLite's immutable read-only mode so SQLite does

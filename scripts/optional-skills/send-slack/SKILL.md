@@ -23,8 +23,9 @@ Slack browser session, Slack OAuth credentials, or the Slack Web API.
 
 ## Requirements
 
-The wiki must have the `ingest-slack`, `slackdump`, `slackdump-source`, and
-`slackdump-sqlite3` support bundle, a Slackdump SQLite archive under
+The wiki must have the `ingest-slack` support bundle, including the
+`refresh-slack`, `slackdump`, `slackdump-source`, and `slackdump-sqlite3` skills,
+a Slackdump SQLite archive under
 `raw/Slack/`, and this user-managed configuration file:
 
 `.llm-wiki/slack/send-slack.env`
@@ -44,15 +45,17 @@ generated wiki pages. Never commit this file.
 
 ## Workflow
 
-### 1. Discover and validate the archive
+### 1. Refresh, discover, and validate the archive
 
 Use the existing Slackdump helper and read-only SQLite behavior. Discover the
 database under `raw/Slack/`, validate its schema, and confirm that its
 messages represent the configured channel.
 
-Slackdump archive refresh is a separate user operation. If the user has added
-new Slack messages, they must first run `slackdump resume` (optionally with
-`-dedupe`) against the archive. This skill never fetches new Slack data.
+Run the shared `refresh-slack` workflow before reading the archive. If refresh
+fails, stop and report the failure; do not inspect candidates or send messages.
+Refresh logs and status are kept under
+`.llm-wiki/slack/<archive-directory-name>/refresh/`. This skill never fetches
+new Slack data independently.
 
 Stop if configuration or the database is missing, the database contains an
 ambiguous set of channels, or its channel does not match the configured ID or

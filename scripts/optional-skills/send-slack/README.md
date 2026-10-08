@@ -10,8 +10,8 @@ browser-session credentials, Slack OAuth tokens, or the Slack Web API.
 ## Requirements
 
 - Python 3.10 or newer;
-- the `ingest-slack`, `slackdump`, `slackdump-source`, and `slackdump-sqlite3`
-  skills;
+- the `ingest-slack` bundle, including `refresh-slack`, `slackdump`,
+  `slackdump-source`, and `slackdump-sqlite3`;
 - a read-only Slackdump SQLite archive under `raw/Slack/`; and
 - a mode-`600` configuration file at `.llm-wiki/slack/send-slack.env`.
 
@@ -41,30 +41,27 @@ Ask the LLM Wiki to check or answer Slack messages addressed to the configured
 bot. The
 workflow will:
 
-1. locate and validate the Slackdump SQLite archive;
-2. confirm that it represents the configured channel;
-3. resolve `SLACK_BOT_NAME` to exactly one Slack user and find canonical
+1. refresh and deduplicate the Slackdump archive;
+2. locate and validate the Slackdump SQLite archive;
+3. confirm that it represents the configured channel;
+4. resolve `SLACK_BOT_NAME` to exactly one Slack user and find canonical
    messages containing a real mention targeting that user, such as Slack's
    stored `<@USER_ID>` form;
-4. include the full parent thread and replies as context;
-5. omit messages already recorded as successfully answered;
-6. show candidates and exact proposed answers for review; and
-7. send only user-selected, explicitly confirmed answers through the webhook.
+5. include the full parent thread and replies as context;
+6. omit messages already recorded as successfully answered;
+7. show candidates and exact proposed answers for review; and
+8. send only user-selected, explicitly confirmed answers through the webhook.
 
-After Slackdump has refreshed the archive, preview candidates explicitly with:
+After refresh succeeds, preview candidates explicitly with:
 
 ```bash
 python3 scripts/optional-skills/send-slack/slack_send.py candidates \
   --database .llm-wiki/slack/slackdump_YYYYMMDD_HHMMSS/slackdump.sqlite
 ```
 
-Refresh the archive separately with Slackdump, for example:
-
-```bash
-slackdump resume .llm-wiki/slack/slackdump_YYYYMMDD_HHMMSS
-```
-
-The responder does not run Slackdump or fetch new Slack messages itself.
+Refresh logs and the latest status are kept under
+`.llm-wiki/slack/<archive-directory-name>/refresh/`. The responder does not
+fetch new Slack messages outside this refresh workflow.
 
 The webhook request is equivalent to:
 

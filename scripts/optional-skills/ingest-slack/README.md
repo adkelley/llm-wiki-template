@@ -5,14 +5,15 @@ and updating Slackdump archives. The LLM Wiki is responsible for discovering
 new messages, asking which messages to ingest, creating source pages, and
 recording successful ingestion.
 
-This directory also contains the three supporting Slackdump skills installed
-with this bundle:
+This directory also contains the supporting Slackdump skills and refresh
+workflow installed with this bundle:
 
 - `slackdump` — safe handling of Slack messages, threads, and files;
 - `slackdump-source` — Slackdump archive and export formats;
-- `slackdump-sqlite3` — read-only SQLite guidance for Slackdump databases.
+- `slackdump-sqlite3` — read-only SQLite guidance for Slackdump databases; and
+- `refresh-slack` — refresh and deduplicate archives before Slack workflows.
 
-Install or update all three supporting skills together.
+Install or update the complete Slack bundle together.
 
 ## User responsibilities
 
@@ -36,16 +37,19 @@ Keep supporting files and directories, including `__uploads/` and optional
 `users-<workspace-id>.txt` files, with the archive. The SQLite `S_USER` table
 is authoritative for user-name resolution.
 
-To update an existing archive, continue using the same archive directory:
+To update an existing archive, run the bundled refresh workflow with the same
+archive directory:
 
 ```bash
-slackdump resume raw/Slack/project-alpha/slackdump_20260912_110311
+scripts/optional-skills/ingest-slack/refresh-slack/refresh_slack.sh \
+  raw/Slack/project-alpha/slackdump_20260912_110311
 ```
 
-After a successful update, identical duplicate records may be removed with:
+The workflow runs both `slackdump resume` and `slackdump resume --dedupe`,
+streams their output, and writes per-archive status under:
 
-```bash
-slackdump resume -dedupe raw/Slack/project-alpha/slackdump_20260912_110311
+```text
+.llm-wiki/slack/{archive-directory-name}/refresh/
 ```
 
 Do not rename or manually edit the Slackdump database, WAL/SHM files, uploads,
@@ -75,9 +79,8 @@ When Slackdump archives are present, the LLM:
    thread group, or for each standalone message; and
 8. records each successfully created source page.
 
-The user does not need to run the Slack utility directly. The utility supports
-the LLM's internal workflow; selection is handled during the `/scan-raw`
-conversation.
+The LLM runs the refresh workflow before reading the archive. Selection is
+handled during the `/scan-raw` conversation.
 
 Thread replies normally share one source page with their parent and retain
 their Slack thread metadata. Keep separate non-threaded messages separate by
