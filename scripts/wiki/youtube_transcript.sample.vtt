@@ -1,0 +1,19 @@
+WEBVTT
+Kind: captions
+Language: en
+
+1
+00:00:00.000 --> 00:00:02.000 align:start position:0%
+<c>Hello</c> <00:00:01.000><strong>world</strong>
+
+2
+00:00:02.000 --> 00:00:04.000
+<c>Hello</c> <00:00:01.000><strong>world</strong>
+
+3
+00:00:04.000 --> 00:00:06.000
+Another<br>line&nbsp;now
+
+4
+00:00:06.000 --> 00:00:08.000
+Hello world

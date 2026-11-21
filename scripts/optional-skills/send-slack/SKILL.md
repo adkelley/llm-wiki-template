@@ -1,0 +1,145 @@
+---
+name: send-slack
+description: |
+  Find unanswered Slack messages addressed to the configured bot in the LLM
+  Wiki's configured Slackdump channel, draft answers using the full thread
+  context, and send user-approved answers through that channel's incoming
+  webhook. Trigger when the user asks to check or answer Slack messages
+  addressed to the configured bot or to post an approved message to the configured channel. Do not use this skill for Slack archive
+  ingestion, administration, uploads, reactions, deletion, editing, or broad
+  multi-channel messaging.
+---
+
+# /send-slack - Answer Slack Messages
+
+## Purpose
+
+Find messages addressed to the configured Slack bot in this wiki's Slackdump SQLite archive,
+determine answers using the full Slack thread context, and send approved
+answers through the configured channel webhook.
+
+Slackdump archives are read-only source material. This skill does not use a
+Slack browser session, Slack OAuth credentials, or the Slack Web API.
+
+## Requirements
+
+The wiki must have the `ingest-slack` support bundle, including the
+`refresh-slack`, `slackdump`, `slackdump-source`, and `slackdump-sqlite3` skills,
+a Slackdump SQLite archive under
+`raw/Slack/`, and this user-managed configuration file:
+
+`.llm-wiki/slack/send-slack.env`
+
+The file must be mode `600` and contain the one Slack channel assigned to this
+wiki and its incoming webhook:
+
+```dotenv
+SLACK_CHANNEL_ID=C0123456789
+SLACK_CHANNEL_NAME=project-alpha
+SLACK_BOT_NAME=my-bot
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+```
+
+Keep the webhook URL out of Git, chat messages, logs, command output, and
+generated wiki pages. Never commit this file.
+
+## Workflow
+
+### 1. Refresh, discover, and validate the archive
+
+Use the existing Slackdump helper and read-only SQLite behavior. Discover the
+database under `raw/Slack/`, validate its schema, and confirm that its
+messages represent the configured channel.
+
+Run the shared `refresh-slack` workflow before reading the archive. If refresh
+fails, stop and report the failure; do not inspect candidates or send messages.
+Refresh logs and status are kept under
+`.llm-wiki/slack/<archive-directory-name>/refresh/`. This skill never fetches
+new Slack data independently.
+
+Stop if configuration or the database is missing, the database contains an
+ambiguous set of channels, or its channel does not match the configured ID or
+name. Do not modify the SQLite database, WAL/SHM files, uploads, avatars, or
+any other Slackdump archive content.
+
+### 2. Find unanswered requests
+
+Load canonical, deduplicated messages and identify messages addressed to the
+configured bot through a real Slack user mention. Slack may store that mention
+as `<@USER_ID>` while rendering it as `@my-bot`. Resolve `SLACK_BOT_NAME`
+against Slack usernames, display names, and real names, requiring exactly one
+matching user. Do not treat ordinary text containing the bot name as a request.
+
+Group each matching message with its full thread context, including parent and
+replies. Resolve author and channel names when available.
+
+Skip messages already recorded as successfully answered in
+`.llm-wiki/slack/send-slack-manifest.jsonl`. Record only after the webhook
+confirms successful delivery; failed or ambiguous sends remain eligible later.
+
+### 3. Draft and preview answers
+
+Prepare a concise answer for every unanswered candidate using the full thread
+context. Present all candidates with channel, timestamp, author, relevant
+thread text, and the exact proposed answer.
+
+Ask which candidates to answer and obtain confirmation of the exact answer text
+before sending. The initial request to check Slack is not confirmation for an
+external write.
+
+### 4. Send approved answers
+
+Use the helper for every approved delivery. For a bot candidate, use
+`send --message-ts TS`. For another archived message, use
+`post --message-ts TS`. Both reply under the parent of the selected message.
+For a new top-level message, omit `--message-ts` from `post`.
+
+```bash
+python3 scripts/optional-skills/send-slack/slack_send.py post \
+  --message-ts '1789210991.000123' --message 'Thanks, @example.m.' --confirm
+```
+
+Preview the destination, reply target, exact text, and intended recipients
+before requesting approval. The helper converts single-token `@handles` to
+Slack mentions using archive usernames, display names, and real names. An
+unknown or ambiguous handle stops delivery. For multiword names, confirm the
+recipient and use their explicit `<@USERID>` mention. Pass the approved text
+as one argument without evaluating it as shell code.
+
+Slack accepts the parent timestamp as `thread_ts`. A successful incoming
+webhook response supplies no new message timestamp. The manifest therefore
+stores the archived target timestamp, or null for a top-level post, plus a
+digest of the delivered text. [Slack webhook documentation](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/)
+
+Treat a successful HTTP response as delivery confirmation. Do not retry an
+ambiguous timeout automatically because Slack may already have accepted it.
+
+### 5. Record successful delivery
+
+After a successful send, the helper appends one JSONL record to the response manifest.
+Identify the archive, channel, triggering message timestamp, thread timestamp
+when present, answer identity, and send time. Never include the webhook URL.
+
+If sending or manifest recording fails, report the failure and do not claim
+that the answer was delivered or mark it successfully handled.
+
+## Safety boundaries
+
+- This is an explicit, on-demand workflow; it is not part of `/scan-raw`.
+- Only the configured channel may be inspected or used for sending.
+- Only real Slack user mentions targeting the configured bot trigger
+  candidates; ordinary text containing the bot name does not.
+- Every external send requires confirmation of the exact text.
+- Send only the specific reply or top-level post approved by the user.
+- Never expose, print, persist, or commit webhook secrets.
+- Never modify Slackdump archives or use Slack OAuth/browser-session credentials.
+- Do not expand this skill to uploads, reactions, edits/deletes,
+  administration, scheduling, or broad Slack search.
+
+## Failure handling
+
+Report actionable errors for missing, unreadable, malformed, or insecure
+configuration; missing, invalid, locked, or ambiguous databases; channel
+identity mismatch; malformed message data; webhook HTTP or network failure;
+and manifest read/write failure. Do not include the webhook URL, request
+headers, secret-bearing response payloads, or raw tracebacks in output.

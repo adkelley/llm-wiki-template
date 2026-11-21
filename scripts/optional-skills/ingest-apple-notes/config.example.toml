@@ -1,0 +1,18 @@
+lookback_days = 7
+raw_output_dir = "raw/"
+
+# Leave empty to use apple-notes-parser's auto-detected default:
+# ~/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite
+database_path = ""
+
+# Optional filters. Empty arrays mean "include all".
+# Typical account names are "iCloud" or "On My Mac".
+accounts = []
+folders = []
+
+# Optional tag filters. Empty arrays mean no tag filter.
+include_tags = []
+exclude_tags = []
+
+max_notes = 25
+wiki = "your-wiki-name"

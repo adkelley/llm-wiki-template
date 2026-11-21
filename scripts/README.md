@@ -1,0 +1,530 @@
+# Scripts
+
+This directory contains setup and integration guides for the supported LLM workflows in this repository.
+
+## Slack ingestion
+
+The repository includes an incremental Slack ingestion utility for Slackdump
+SQLite channel archives. Slackdump archives remain immutable under
+`raw/Slack/`; the utility discovers canonical messages, skips messages already
+recorded in each archive’s local manifest, and presents new messages for LLM
+review. The LLM then creates one source page per message under
+`wiki/sources/`.
+
+For archive layout, Slackdump preparation, command usage, manifest behavior,
+and the division of responsibilities between the utility and the LLM, see the
+[Slack ingestion guide](wiki/slack/README.md).
+
+## Shared Wiki Utilities
+
+Reusable, agent-independent wiki utilities should live under `scripts/wiki/`.
+These scripts are intended to be called by generated agent instructions such as
+`AGENT.md` and `CLAUDE.md`, and should work across macOS, Windows, and Linux
+where possible.
+
+The first shared utility is an ingest guard:
+
+```text
+scripts/wiki/ingest_guard.py
+```
+
+The directory also includes a utility for linking external source folders into
+the wiki's `raw/` directory:
+
+```text
+scripts/wiki/link_raw_sources.sh
+```
+
+`link_raw_sources.sh` creates relative symbolic links for every immediate
+folder alongside the wiki directory, excluding the wiki directory itself.
+This is useful when the wiki is stored inside a larger project folder and
+source material should remain in its original folders rather than being
+copied into `raw/`. Existing links are left unchanged when they point to the
+expected target; conflicting files or links cause the script to stop.
+
+The script uses the current directory as the wiki directory when no argument is
+provided. If you are working in this repository, run it from the repository
+root and pass the `wiki` directory explicitly:
+
+```bash
+bash scripts/wiki/link_raw_sources.sh wiki
+```
+
+If the script is installed alongside the wiki's other tooling, you can run it
+from inside the wiki directory with `.` as the wiki path:
+
+```bash
+bash ../scripts/wiki/link_raw_sources.sh .
+```
+
+Alternatively, provide the wiki directory explicitly from any working
+directory:
+
+```bash
+bash scripts/wiki/link_raw_sources.sh "/path/to/LLM Wiki"
+```
+
+For example, if the wiki is at `Acme/LLM Wiki`, the script links sibling
+folders such as `Acme/Research` into `Acme/LLM Wiki/raw/Research`.
+
+The ingest guard helps prevent users from accidentally ingesting duplicate
+material, and lets them mark specific files or whole folders as
+do-not-ingest. It records every ingest decision in a local JSON Lines
+manifest:
+
+```text
+.llm-wiki/ingest-manifest.jsonl
+```
+
+Each manifest line is one JSON object. Current records include:
+
+- `schema_version`
+- `source_path`
+- `size_bytes`
+- `byte_sha256`
+- `text_sha256` for plain-text files
+- `decision` — `"ingest"` or `"skip"`
+- `ingested_at` for recorded ingests
+- `skipped_at` and optional `reason` for recorded skips
+
+When a file's hash matches more than one manifest record, the most recently
+appended record wins — so ingesting a previously skipped file, or skipping a
+previously ingested one, overrides the earlier decision without editing
+history.
+
+Whole folders can be excluded without hashing or recording every file inside
+them, using a separate path-ignore list:
+
+```text
+.llm-wiki/raw-ignore.txt
+```
+
+One fnmatch-style glob pattern per line, matched against each file's path
+relative to `raw/`. Files matching a pattern are excluded before hashing and
+never appear in the manifest.
+
+#### Path-Ignore File Format
+
+`.llm-wiki/raw-ignore.txt` follows a few simple rules:
+
+- One pattern per line.
+- Blank lines are skipped.
+- Lines starting with `#` are comments and are skipped.
+- A line ending in `/` is treated as a whole folder: the trailing slash is
+  expanded to `/*` internally, so `Financials/Archive/` matches every file
+  under that folder, including files added later. Writing the glob yourself
+  (`Financials/Archive/*`) has the same effect.
+- Patterns are matched with Python's `fnmatch` against the file's path
+  relative to `raw/`, using forward slashes regardless of platform.
+- Matching is case-insensitive on macOS and Windows and case-sensitive on
+  Linux, since `fnmatch` follows the OS's own path case-folding rules.
+
+Example file:
+
+```text
+# personal financial archive, not wiki-relevant
+Financials/Archive/
+drafts/scratch-*.md
+```
+
+#### Symlinked Folders Under `raw/`
+
+`raw/` entries may be symlinks to folders that live outside the wiki tree
+(for example `raw/Research -> ../../Research`), such as when a user keeps
+source material in its original location and links it into `raw/` instead of
+copying it in. `audit` and `index-existing` traverse into symlinked
+directories and hash the files inside them the same as regular folders, and
+path-ignore patterns match against the file's logical path under `raw/`
+regardless of where a symlinked ancestor folder physically points. Traversal
+guards against symlink cycles, so a loop won't cause `audit` or
+`index-existing` to hang.
+
+The current workflow is:
+
+1. compute a SHA-256 hash of the source file bytes
+2. extract and normalize text, then compute a SHA-256 hash of the normalized text
+3. compare both hashes against the manifest, honoring the latest decision
+4. stop, skip, or proceed based on whether a duplicate, skip, or ignored-path
+   match exists
+5. record ingest and skip decisions in `.llm-wiki/ingest-manifest.jsonl`
+
+### Ingest Guard Usage
+
+Compute hashes for one file without reading or writing the manifest:
+
+```bash
+python3 scripts/wiki/ingest_guard.py hash raw/README.md
+```
+
+Check whether a candidate file matches a prior ingest, a prior skip, or an
+ignored path:
+
+```bash
+python3 scripts/wiki/ingest_guard.py check raw/README.md
+```
+
+Append a successful ingest record. This refuses byte-identical and
+normalized-text duplicates that are still recorded as ingested — recording a
+file that was previously marked skip overrides that skip:
+
+```bash
+python3 scripts/wiki/ingest_guard.py record raw/README.md
+```
+
+Mark one specific file as do-not-ingest, with an optional reason:
+
+```bash
+python3 scripts/wiki/ingest_guard.py skip raw/quarterly-notes.pdf \
+  --reason "personal, not wiki-relevant"
+```
+
+Add a whole folder (or any glob pattern) to the path-ignore list, so nothing
+under it — including files added later — is ever surfaced as new:
+
+```bash
+python3 scripts/wiki/ingest_guard.py ignore-path "Financials/Archive/"
+```
+
+Inspect `raw/` against the manifest and ignore list without writing:
+
+```bash
+python3 scripts/wiki/ingest_guard.py audit
+```
+
+`audit` reports counts and a per-file `status` of `known` (already ingested),
+`new`, `skipped` (previously marked do-not-ingest), or `ignored_by_path`.
+
+Backfill the manifest from files already present under `raw/`, skipping
+anything matched by the path-ignore list:
+
+```bash
+python3 scripts/wiki/ingest_guard.py index-existing
+```
+
+The default manifest and raw directory can be overridden for testing or custom
+layouts:
+
+```bash
+python3 scripts/wiki/ingest_guard.py \
+  --manifest /tmp/ingest-test.jsonl \
+  --raw-dir raw \
+  audit
+```
+
+Global options such as `--manifest` and `--raw-dir` must appear before the
+subcommand.
+
+The first stdlib-only implementation computes normalized text hashes only for
+plain-text file suffixes such as `.md`, `.txt`, `.csv`, `.json`, `.jsonl`,
+`.html`, and `.htm`. Binary or container formats such as `.pdf`, `.docx`, and
+`.pptx` currently receive only a byte hash. Future versions may add explicit
+text extraction for those formats.
+
+The generated `scripts/codex/AGENT.md` and `scripts/claude/CLAUDE.md` templates
+should explicitly instruct agents to run this guard before ingesting raw
+material once the utility exists.
+
+## YouTube Transcript Capture
+
+The YouTube transcript utility downloads auto-generated captions with `yt-dlp`,
+cleans the WebVTT text, and writes a raw Markdown source file:
+
+```text
+scripts/wiki/youtube_transcript.py
+```
+
+The [`ingest-youtube`](optional-skills/ingest-youtube/) optional skill provides
+an agent workflow around this shared utility. The utility can also be run
+directly as documented below.
+
+It depends on `yt-dlp` being installed separately. Install `yt-dlp` using the
+official instructions for your operating system, then confirm it works:
+
+```bash
+yt-dlp --version
+```
+
+Basic usage:
+
+```bash
+python3 scripts/wiki/youtube_transcript.py "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+If the video title should be overridden:
+
+```bash
+python3 scripts/wiki/youtube_transcript.py \
+  --title "Readable title override" \
+  "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+The utility can also clean an existing local `.vtt` file. In local-file mode,
+pass source metadata explicitly when available:
+
+```bash
+python3 scripts/wiki/youtube_transcript.py \
+  subtitles.en.vtt \
+  --title "Readable title" \
+  --url "https://www.youtube.com/watch?v=VIDEO_ID" \
+  --published "YYYY-MM-DD"
+```
+
+The generated file is written under `raw/` by default:
+
+```text
+raw/{YYYY-MM-DD-or-undated}-{slugified-title}-{video_id}.md
+```
+
+After creation, run the ingest guard before asking an agent to ingest the raw
+transcript:
+
+```bash
+python3 scripts/wiki/ingest_guard.py check raw/{filename}.md
+```
+
+## Managed Template Hashes
+
+The setup scripts use a separate template guard to track hashes for installed
+agent instruction templates:
+
+```text
+scripts/wiki/template_guard.py
+```
+
+```text
+.llm-wiki/template-manifest.jsonl
+```
+
+This lets `scripts/codex/setup.sh` and `scripts/claude/setup.sh` distinguish an
+old untouched template from a user-edited `AGENT.md` or `CLAUDE.md`.
+
+Check the status of an installed template:
+
+```bash
+python3 scripts/wiki/template_guard.py status \
+  --template scripts/codex/AGENT.md \
+  --target AGENT.md
+```
+
+Record the template hash after copying or updating a managed template:
+
+```bash
+python3 scripts/wiki/template_guard.py record \
+  --template scripts/codex/AGENT.md \
+  --target AGENT.md
+```
+
+`status` returns one of these statuses:
+
+- `missing` - the target file does not exist and can be created
+- `replace` - the target still matches the last installed template and can be
+  updated
+- `record` - the target already matches the current template but needs a
+  manifest entry
+- `current` - the target matches the current template and manifest
+- `preserve` - the target appears to have local changes and should not be
+  overwritten automatically
+
+## Migration of Wiki frontmatter
+
+The LLM Wiki schema evolves as new capabilities are introduced. Migration
+scripts update existing wiki pages to newer schemas while preserving their
+substantive content.
+
+Run migrations in numerical order. Commit or back up the wiki before applying
+any migration.
+
+### Migration 001: Stable Page IDs
+
+The first migration script, `scripts/wiki/migrate_v1.py`, assigns a permanent,
+type-specific ID to each supported wiki page. The ID field immediately follows
+the existing `type` field:
+
+- `source_id: source:{slug}`
+- `concept_id: concept:{slug}`
+- `entity_id: entity:{slug}`
+- `comparison_id: comparison:{slug}`
+- `synthesis_id: synthesis:{slug}`
+- `trace_id: trace:{slug}`
+
+```bash
+python3 scripts/wiki/migrate_v1.py --wiki-dir wiki
+python3 scripts/wiki/migrate_v1.py --wiki-dir wiki --apply
+python3 scripts/wiki/migrate_v1.py --wiki-dir wiki --json
+python3 scripts/wiki/migrate_v1.py --wiki-dir wiki --apply --json
+```
+
+New IDs are derived deterministically from page filenames. Once assigned, an ID
+is permanent and is not changed merely because a page is renamed or moved.
+
+- Preview is the default.
+- `--apply` writes only after complete validation.
+- `--json` emits a single machine-readable JSON report instead of human-readable
+  output; it does not imply `--apply`
+- `--json` may be combined with `--apply` to report the changes actually made.
+- Existing valid IDs are preserved.
+- Invalid frontmatter and duplicate IDs block all writes.
+- A second run should report `pending=0`.
+
+### Migration 002: Current Wiki Schema and Directory Structure
+
+After Migration 001, run `scripts/wiki/migrate_v2.py` to upgrade source,
+concept, entity, comparison, synthesis, trace, and contradiction-resolution
+pages to the current schema and create the required task directories.
+
+For source pages:
+
+```yaml
+author: "Author, organization, or complete credit line"
+source_file: raw/report.md
+```
+
+becomes:
+
+```yaml
+attribution: "Author, organization, or complete credit line"
+source_file: "[[raw/report.md]]"
+renditions: []
+source_type: unknown
+```
+
+For concept and entity pages:
+
+```yaml
+title: "Acme Corporation"
+```
+
+becomes:
+
+```yaml
+canonical_name: "Acme Corporation"
+aliases: []
+abbreviations: []
+known_variants: []
+known_errors: []
+```
+
+```bash
+python3 scripts/wiki/migrate_v2.py --wiki-dir wiki
+python3 scripts/wiki/migrate_v2.py --wiki-dir wiki --apply
+python3 scripts/wiki/migrate_v2.py --wiki-dir wiki --json
+python3 scripts/wiki/migrate_v2.py --wiki-dir wiki --apply --json
+```
+
+- Preview is the default; `--apply` and `--json` behave as in Migration 001.
+- Existing `attribution` wins when a source page contains both `author` and
+  `attribution`; the obsolete `author` field is removed. Attribution remains a
+  single scalar and is preserved without parsing or reclassification.
+- Plain scalar `source_file` paths become quoted wikilinks. Existing wikilinks
+  are preserved.
+- Missing `renditions` fields receive `renditions: []`. Existing empty or
+  populated block lists are preserved; malformed lists block every write.
+- Missing `source_type` fields receive `source_type: unknown`. Existing values
+  must use the documented enum. Migration does not infer a type from file
+  extensions or source content; `unknown` is replaced after semantic review.
+- Existing `canonical_name` wins when a page contains both `title` and
+  `canonical_name`; the obsolete `title` field is removed.
+- Existing valid name-list values and their order are preserved. Missing fields
+  receive `field: []` immediately after `canonical_name`.
+- Empty name lists use `field: []`. Populated name lists use block form with one
+  nonempty scalar string per item; populated inline lists are not supported.
+- The migration performs no inference, lookup, normalization, deduplication, or
+  recategorization of names.
+- Existing concept aliases remain aliases; they are not reclassified as
+  abbreviations or variants.
+- Comparison, synthesis, and trace pages replace `filed_from_query` with
+  `origin`, receive the current status and relationship fields, and preserve
+  existing valid values. Missing semantic values use conservative defaults.
+- Legacy trace `concept` values supply the new title and initial subject, and
+  scalar ingest ranges become `start`/`end` mappings.
+- Contradiction-resolution pages already under
+  `wiki/tasks/contradiction-resolutions/` are validated and receive missing
+  stable IDs. Legacy `wiki/contradictions/` content is not moved.
+- Apply mode creates `.gitkeep` files for empty or absent `wiki/traces/` and
+  `wiki/tasks/contradiction-resolutions/` directories.
+- Malformed frontmatter, duplicate fields, invalid attribution or names, or
+  invalid work/task schemas block every write.
+- A second run reports `pending=0`.
+
+## Claude Code
+
+If you are using Claude Code, run:
+
+```bash
+scripts/claude/setup.sh
+```
+
+This setup script configures Claude Code for the repository and can optionally install Claude-specific skills.
+
+For more details, see `scripts/claude/README.md`.
+
+## Codex
+
+If you are using Codex, run:
+
+```bash
+scripts/codex/setup.sh
+```
+
+This setup script configures Codex for the repository and can optionally install additional skills.
+
+For more details, see `scripts/codex/README.md`.
+
+## Obsidian
+
+If you are using [Obsidian](https://obsidian.md/) as your IDE, you may also want to:
+
+- update `.obsidian/app.json` for your local vault preferences
+- install Obsidian-related skills that use Obsidian's native CLI
+
+These skills can provide programmatic access to Obsidian's internal cache and metadata, which can be more reliable than plain filesystem search for some workflows.
+
+For background, see the [Karpathy-LLM-Wiki-Stack](https://github.com/ScrapingArt/Karpathy-LLM-Wiki-Stack?tab=readme-ov-file#8-the-obsidian-cli-advantage).
+
+For installation steps, see `scripts/obsidian/README.md`.
+
+## Optional Skills
+
+Shared optional skills are located under `scripts/optional-skills/`.
+
+The Codex and Claude setup scripts can install selected skills into the
+tool-specific skills directory. Updates synchronize maintained skill files
+while preserving local configuration and state files.
+
+### Available skills
+
+- [`close`](optional-skills/close/) — Close an evening session by recording
+  decisions in the wiki and appending to `wiki/log.md`.
+- [`defuddle`](optional-skills/defuddle/) — Capture a web article as clean,
+  provenance-rich Markdown in `raw/`; requires the Defuddle CLI.
+- [`ghost`](optional-skills/ghost/) — Study the wiki and raw notes to write or
+  rewrite text in the user's established voice.
+- [`ingest-apple-notes`](optional-skills/ingest-apple-notes/) — Review recent
+  Apple Notes and export approved notes into `raw/`; requires macOS and
+  `apple-notes-parser`.
+- [`ingest-just-record`](optional-skills/ingest-just-record/) — Provides the
+  `ingest-voice` skill for transcribing Just Press Record voice memos; designed
+  for macOS and local or API-backed Whisper.
+- [`ingest-mail`](optional-skills/ingest-mail/) — Review mail through the
+  read-only Himalaya CLI workflow and ingest approved messages.
+- [`ingest-otter-transcript`](optional-skills/ingest-otter-transcript/) — Fetch
+  Otter.ai conversations through the Public API and preserve transcripts in
+  `raw/`; requires `OTTER_API_KEY`.
+- [`ingest-youtube`](optional-skills/ingest-youtube/) — Capture YouTube captions
+  through the shared transcript utility; requires `yt-dlp`.
+- [`my_world`](optional-skills/my_world/) — Start a session with a briefing from
+  the wiki index, log, and current state.
+- [`recall`](optional-skills/recall/) — Query only this wiki's configured qmd
+  collection. During initial installation, setup derives a default collection
+  name from `## Domain`, allows an override, registers `wiki/`, and adds concise
+  Domain-based collection context.
+- [`scan-raw`](optional-skills/scan-raw/) — Find un-ingested files in `raw/` and
+  offer the guarded ingest workflow.
+- [`today`](optional-skills/today/) — Produce a morning briefing with three
+  priorities grounded in current wiki state.
+- [`trace`](optional-skills/trace/) — Reconstruct how a concept evolved across
+  the wiki and save the resulting trace.
+
+Each skill's `SKILL.md` is authoritative for agent behavior. Skill-local
+READMEs provide additional human setup instructions where dependencies or
+configuration warrant them.

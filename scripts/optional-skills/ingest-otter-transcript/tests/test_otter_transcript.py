@@ -1,0 +1,437 @@
+from __future__ import annotations
+
+import importlib.util
+import io
+import json
+import sys
+import tempfile
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from datetime import date
+from pathlib import Path
+from unittest import mock
+
+SCRIPT_PATH = Path(__file__).resolve().parents[1] / "otter_transcript.py"
+SKILL_DIR = SCRIPT_PATH.parent
+if str(SKILL_DIR) not in sys.path:
+    sys.path.insert(0, str(SKILL_DIR))
+
+SPEC = importlib.util.spec_from_file_location("otter_transcript", SCRIPT_PATH)
+assert SPEC is not None, "Failed to load otter_transcript module"
+assert SPEC.loader is not None, "Failed to load otter_transcript module"
+
+otter_transcript = importlib.util.module_from_spec(SPEC)
+sys.modules["otter_transcript"] = otter_transcript
+SPEC.loader.exec_module(otter_transcript)
+
+
+class FakeResponse:
+    def __init__(self, payload: object):
+        self.payload = payload
+
+    def __enter__(self) -> "FakeResponse":
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
+
+
+class OtterTranscriptTest(unittest.TestCase):
+    def sample_list_conversation(self) -> dict:
+        return {
+            "id": "abc123",
+            "title": "Weekly Project Sync",
+            "url": "https://otter.ai/u/abc123",
+            "created_at": "2026-05-14T22:05:26Z",
+            "owner": {
+                "email": "owner@example.com",
+            },
+            "calendar_guests": [
+                {"email": "participant@example.com"},
+                {"email": "OWNER@example.com"},
+                {"email": None},
+            ],
+            "shared_emails": [
+                {
+                    "email": "shared@example.com",
+                    "user": {"email": "participant@example.com"},
+                }
+            ],
+        }
+
+    def sample_other_list_conversation(self) -> dict:
+        return {
+            "id": "def456",
+            "title": "Project Follow Up",
+            "url": "https://otter.ai/u/def456",
+            "created_at": "2026-05-13T17:54:08Z",
+            "owner": {
+                "email": "owner@example.com",
+            },
+            "calendar_guests": [
+                {"email": "participant@example.com"},
+            ],
+            "shared_emails": [],
+        }
+
+    def sample_full_conversation(self) -> dict:
+        conversation = self.sample_list_conversation()
+        conversation["relationships"] = {
+            "transcript": {
+                "content": "Example Speaker  00:00\nHello from Otter.\n",
+                "format": "txt",
+            }
+        }
+        return conversation
+
+    def test_slugify_normalizes_filename_text(self):
+        self.assertEqual(
+            otter_transcript.slugify("Weekly Project & Sync"),
+            "weekly-project-sync",
+        )
+        self.assertEqual(otter_transcript.slugify("!!!", "fallback"), "fallback")
+        self.assertEqual(otter_transcript.slugify("A---B"), "a-b")
+
+    def test_date_from_created_at_uses_iso_date_prefix(self):
+        self.assertEqual(
+            otter_transcript.date_from_created_at("2026-05-14T22:05:26Z"),
+            "2026-05-14",
+        )
+        self.assertEqual(otter_transcript.date_from_created_at(None), "undated")
+        self.assertEqual(otter_transcript.date_from_created_at("not-a-date"), "undated")
+
+    def test_date_range_from_when_supports_yesterday(self):
+        self.assertEqual(
+            otter_transcript.date_range_from_when(
+                "yesterday",
+                today=date(2026, 5, 16),
+            ),
+            (date(2026, 5, 15), date(2026, 5, 15)),
+        )
+
+    def test_date_range_from_when_supports_last_week(self):
+        self.assertEqual(
+            otter_transcript.date_range_from_when(
+                "last week",
+                today=date(2026, 5, 16),
+            ),
+            (date(2026, 5, 4), date(2026, 5, 10)),
+        )
+
+    def test_date_filter_matches_range(self):
+        conversation = self.sample_list_conversation()  # 2026-05-14
+
+        self.assertTrue(
+            otter_transcript.date_filter_matches(
+                conversation,
+                exact_date=None,
+                date_range=(date(2026, 5, 14), date(2026, 5, 15)),
+            )
+        )
+        self.assertFalse(
+            otter_transcript.date_filter_matches(
+                conversation,
+                exact_date=None,
+                date_range=(date(2026, 5, 1), date(2026, 5, 10)),
+            )
+        )
+
+    def test_main_list_mode_filters_by_when_yesterday(self):
+        yesterday_conversation = self.sample_list_conversation()
+        yesterday_conversation["created_at"] = "2026-05-15T10:00:00Z"
+
+        older_conversation = self.sample_other_list_conversation()
+        older_conversation["created_at"] = "2026-05-13T10:00:00Z"
+
+        with (
+            mock.patch.dict(
+                otter_transcript.os.environ,
+                {"OTTER_API_KEY": "test-key"},
+                clear=True,
+            ),
+            mock.patch.object(
+                otter_transcript,
+                "list_conversations",
+                return_value=[yesterday_conversation, older_conversation],
+            ),
+            mock.patch.object(
+                otter_transcript,
+                "date_range_from_when",
+                return_value=(date(2026, 5, 15), date(2026, 5, 15)),
+            ),
+            mock.patch.object(
+                otter_transcript,
+                "fetch_conversation",
+            ) as fetch_conversation,
+        ):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = otter_transcript.main(
+                    [
+                        "--list",
+                        "--when",
+                        "yesterday",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("Found 1 matching conversation(s); showing 1", output)
+        self.assertIn("Weekly Project Sync", output)
+        self.assertNotIn("Project Follow Up", output)
+        fetch_conversation.assert_not_called()
+
+    def test_main_rejects_date_and_when_together(self):
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            with self.assertRaises(SystemExit) as error:
+                otter_transcript.main(
+                    [
+                        "--date",
+                        "2026-05-14",
+                        "--when",
+                        "yesterday",
+                    ]
+                )
+
+        self.assertEqual(error.exception.code, 2)
+
+    def test_main_rejects_unsupported_when_value(self):
+        with mock.patch.dict(
+            otter_transcript.os.environ,
+            {"OTTER_API_KEY": "test-key"},
+            clear=True,
+        ):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = otter_transcript.main(
+                    ["--list", "--when", "two fridays ago"]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("unsupported --when value", stdout.getvalue())
+
+    def test_filters_match_title_date_and_email(self):
+        conversation = self.sample_list_conversation()
+
+        self.assertTrue(otter_transcript.title_matches(conversation, "sync"))
+        self.assertFalse(otter_transcript.title_matches(conversation, "unrelated meeting"))
+        self.assertTrue(otter_transcript.date_matches(conversation, "2026-05-14"))
+        self.assertFalse(otter_transcript.date_matches(conversation, "2026-05-13"))
+        self.assertTrue(
+            otter_transcript.email_matches(conversation, "participant@example.com")
+        )
+        self.assertFalse(
+            otter_transcript.email_matches(conversation, "missing@example.com")
+        )
+
+    def test_conversation_emails_collects_and_normalizes_addresses(self):
+        self.assertEqual(
+            otter_transcript.conversation_emails(self.sample_list_conversation()),
+            {
+                "owner@example.com",
+                "participant@example.com",
+                "shared@example.com",
+            },
+        )
+
+    def test_raw_output_path_uses_date_title_and_id(self):
+        path = otter_transcript.raw_output_path(
+            self.sample_full_conversation(),
+            Path("raw"),
+        )
+        self.assertEqual(
+            path,
+            Path("raw") / "2026-05-14-otter-weekly-project-sync-abc123.md",
+        )
+
+    def test_transcript_from_conversation_rejects_missing_content(self):
+        with self.assertRaises(otter_transcript.OtterTranscriptError):
+            otter_transcript.transcript_from_conversation({"relationships": {}})
+
+        with self.assertRaises(otter_transcript.OtterTranscriptError):
+            otter_transcript.transcript_from_conversation(
+                {"relationships": {"transcript": {"content": "   "}}}
+            )
+
+    def test_raw_markdown_preserves_transcript_and_adds_metadata(self):
+        markdown = otter_transcript.raw_markdown(self.sample_full_conversation())
+
+        self.assertIn("Title: Weekly Project Sync\n", markdown)
+        self.assertIn("Source: Otter.ai Public API\n", markdown)
+        self.assertIn("Conversation ID: abc123\n", markdown)
+        self.assertIn(
+            "Participant emails: owner@example.com, participant@example.com, shared@example.com\n",
+            markdown,
+        )
+        self.assertTrue(
+            markdown.endswith("Example Speaker  00:00\nHello from Otter.\n\n")
+        )
+
+    def test_write_raw_markdown_refuses_overwrite(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = Path(tmp) / "raw" / "example.md"
+            otter_transcript.write_raw_markdown(output_path, "first")
+
+            self.assertEqual(output_path.read_text(encoding="utf-8"), "first")
+            with self.assertRaises(otter_transcript.OtterTranscriptError):
+                otter_transcript.write_raw_markdown(output_path, "second")
+
+            self.assertEqual(output_path.read_text(encoding="utf-8"), "first")
+
+    def test_list_conversations_reads_data_list(self):
+        payload = {"meta": {}, "data": [self.sample_list_conversation()]}
+
+        with mock.patch.object(
+            otter_transcript.urllib.request,
+            "urlopen",
+            return_value=FakeResponse(payload),
+        ):
+            conversations = otter_transcript.list_conversations("test-key")
+
+        self.assertEqual(len(conversations), 1)
+        self.assertEqual(conversations[0]["id"], "abc123")
+
+    def test_fetch_conversation_reads_data_object(self):
+        payload = {"meta": {}, "data": self.sample_full_conversation()}
+
+        with mock.patch.object(
+            otter_transcript.urllib.request,
+            "urlopen",
+            return_value=FakeResponse(payload),
+        ):
+            conversation = otter_transcript.fetch_conversation("test-key", "abc123")
+
+        self.assertEqual(conversation["id"], "abc123")
+        self.assertEqual(
+            conversation["relationships"]["transcript"]["content"],
+            "Example Speaker  00:00\nHello from Otter.\n",
+        )
+
+    def test_main_direct_conversation_writes_raw_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "raw"
+
+            with (
+                mock.patch.dict(
+                    otter_transcript.os.environ,
+                    {"OTTER_API_KEY": "test-key"},
+                    clear=True,
+                ),
+                mock.patch.object(
+                    otter_transcript,
+                    "fetch_conversation",
+                    return_value=self.sample_full_conversation(),
+                ),
+            ):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    exit_code = otter_transcript.main(
+                        [
+                            "--conversation-id",
+                            "abc123",
+                            "--raw-output-dir",
+                            output_dir.as_posix(),
+                        ]
+                    )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Created:", stdout.getvalue())
+            output_files = list(output_dir.glob("*.md"))
+            self.assertEqual(len(output_files), 1)
+            self.assertIn(
+                "Example Speaker  00:00\nHello from Otter.\n",
+                output_files[0].read_text(encoding="utf-8"),
+            )
+
+    def test_main_list_mode_prints_limited_matches_without_fetching(self):
+        conversations = [
+            self.sample_list_conversation(),
+            self.sample_other_list_conversation(),
+        ]
+
+        with (
+            mock.patch.dict(
+                otter_transcript.os.environ,
+                {"OTTER_API_KEY": "test-key"},
+                clear=True,
+            ),
+            mock.patch.object(
+                otter_transcript,
+                "list_conversations",
+                return_value=conversations,
+            ),
+            mock.patch.object(
+                otter_transcript,
+                "fetch_conversation",
+            ) as fetch_conversation,
+        ):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = otter_transcript.main(
+                    [
+                        "--list",
+                        "--title",
+                        "Project",
+                        "--limit",
+                        "1",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("Found 2 matching conversation(s); showing 1", output)
+        self.assertIn("Weekly Project Sync", output)
+        self.assertNotIn("Project Follow Up", output)
+        fetch_conversation.assert_not_called()
+
+    def test_main_multiple_matches_prints_limited_candidates(self):
+        conversations = [
+            self.sample_list_conversation(),
+            self.sample_other_list_conversation(),
+        ]
+
+        with (
+            mock.patch.dict(
+                otter_transcript.os.environ,
+                {"OTTER_API_KEY": "test-key"},
+                clear=True,
+            ),
+            mock.patch.object(
+                otter_transcript,
+                "list_conversations",
+                return_value=conversations,
+            ),
+            mock.patch.object(
+                otter_transcript,
+                "fetch_conversation",
+            ) as fetch_conversation,
+        ):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = otter_transcript.main(
+                    [
+                        "--title",
+                        "Project",
+                        "--limit",
+                        "1",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        output = stdout.getvalue()
+        self.assertIn("Multiple matching conversations found: 2; showing 1", output)
+        self.assertIn("Weekly Project Sync", output)
+        self.assertNotIn("Project Follow Up", output)
+        self.assertIn(
+            "otter_transcript: narrow the search or rerun with --conversation-id",
+            output,
+        )
+        fetch_conversation.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()
